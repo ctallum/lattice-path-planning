@@ -4,9 +4,12 @@ File to contain Slicer class which takes a stl model and generates cross section
 
 from matplotlib import pyplot as plt
 import numpy as np
-from typing import Tuple, Dict
+from typing import Tuple, Dict, List
 import openmesh as om
 import trimesh 
+# from shapely import LinearRing, Point
+from matplotlib.patches import Polygon
+
 
 
 class Slicer:
@@ -82,6 +85,55 @@ class Slicer:
         layer_heights = np.arange(0, self.z_range[1], self.layer_height)
         self.n_layers = np.size(layer_heights)
         self.layer_edges, _, _ = trimesh.intersections.mesh_multiplane(self.mesh, np.zeros((3)), np.array([0,0,1]), layer_heights)
+
+        self.edge_polygons = []
+        for layer in range(self.n_layers):
+            re_ordered_edge = self.reorder_edges(self.layer_edges[layer])
+            self.all_edge_polygons.append(self.layer_to_polygon(re_ordered_edge))
+
+
+    def reorder_edges(self,coordinates) -> List[np.ndarray]:
+        """
+        Iterate through all set of edges and re-order them. Also split into seperate rings if needed
+        """
+        coordinates = np.around(coordinates,4).tolist()
+        reordered_coords = []
+        while coordinates:
+            current_edge = coordinates[0]
+            coordinates.pop(0)
+            reordered_region = [current_edge]
+            while True:
+                next_edge_index = None
+                for i, edge in enumerate(coordinates):
+                    if edge[0] == current_edge[1]:
+                        next_edge_index = i
+                        reordered_region.append(edge)
+                        current_edge = edge
+                        coordinates.pop(i)
+                        break
+                    if edge[1] == current_edge[1]:
+                        next_edge_index = i
+                        reordered_region.append(edge[::-1])
+                        current_edge = edge[::-1]
+                        coordinates.pop(i)
+                        break
+                if next_edge_index is None:
+                    break
+            reordered_coords.append(reordered_region)
+            reordered_coords = [np.array(a) for a in reordered_coords]
+            edge_rings = []
+            for ring in reordered_coords:
+                edge_rings.append(ring[:,0,:])
+
+        return edge_rings
+
+    def layer_to_polygon(self, layer_edge: List[np.ndarray]) -> List[Polygon]:
+        polygons = []
+        for ring in layer_edge:
+            polygons.append(Polygon(ring))
+
+        return polygons
+
         
     def plot_layer_edge(self, layer: int) -> None:
         """
@@ -96,4 +148,15 @@ class Slicer:
         for idx in range(np.shape(layer_edge)[0]):
             plt.plot(*layer_edge[idx,:,:].T, "-k")
 
+    def calc_n_regions_layer(self, layer) -> int:
+        """
+        Calculate the number of distinct closed regions for any given layer
+        """
+        return len(self.edge_polygons[layer])
+
+    def is_in_layer(self, layer: int, point: Tuple[float,float]):
+        """
+        Calculate if a given point is within the model at a given layer
+        """
+        return self.edge_polygons[layer].get_path().contains_point(point)
 

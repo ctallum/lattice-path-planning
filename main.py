@@ -18,9 +18,9 @@ if __name__ == "__main__":
     
     slicer.slice(path)
 
-    print(slicer.n_layers)
+    # print(slicer.n_layers)
 
-    slicer.plot_layer_edge(530)
+    # slicer.plot_layer_edge(530)
 
 
     plt.show()
