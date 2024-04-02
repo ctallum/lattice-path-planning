@@ -76,11 +76,24 @@ class Slicer:
     def create_slices(self) -> None:
         """
         Take model and parameters and slice model uniformly along the xy axis. 
-        Creates self.layers: List[np.ndarray(n_layers,2,2)]
+        Creates self.layers_edges: List[np.ndarray(n_layers,2,2)]
         """
 
         layer_heights = np.arange(0, self.z_range[1], self.layer_height)
         self.n_layers = np.size(layer_heights)
-        self.layers, _, _ = trimesh.intersections.mesh_multiplane(self.mesh, np.zeros((3)), np.array([0,0,1]), layer_heights)
+        self.layer_edges, _, _ = trimesh.intersections.mesh_multiplane(self.mesh, np.zeros((3)), np.array([0,0,1]), layer_heights)
         
+    def plot_layer_edge(self, layer: int) -> None:
+        """
+        Plot a given layer_edge
+        Input: 
+            layer: int
+        """
+        plt.figure()
+
+        layer_edge = self.layer_edges[layer]
+
+        for idx in range(np.shape(layer_edge)[0]):
+            plt.plot(*layer_edge[idx,:,:].T, "-k")
+
 
