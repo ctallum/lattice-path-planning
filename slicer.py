@@ -5,10 +5,9 @@ File to contain Slicer class which takes a stl model and generates cross section
 from matplotlib import pyplot as plt
 import numpy as np
 from typing import Tuple, Dict, List
-import openmesh as om
 import trimesh 
-# from shapely import LinearRing, Point
 from matplotlib.patches import Polygon
+from tqdm import tqdm
 
 
 
@@ -77,6 +76,9 @@ class Slicer:
         """
         Convert the raw edge data into a set of polygons
         """
+
+        pbar = tqdm(total=self.n_layers,desc = "Processing Layer Info")
+
         slices = []
         for layer in range(self.n_layers):
             re_ordered_edge = self.reorder_edges(layer_edges[layer])
@@ -84,7 +86,7 @@ class Slicer:
             for ring in re_ordered_edge:
                 polygons.append(Polygon(ring))
             slices.append(polygons)
-        
+            pbar.update(1)
         return slices
 
 
