@@ -8,6 +8,8 @@ from typing import Tuple, Dict, List
 import trimesh 
 from matplotlib.patches import Polygon
 from tqdm import tqdm
+import lattpy as lp
+from lattpy import Shape
 
 
 
@@ -19,7 +21,7 @@ class Slicer:
             "layer_height": float,
             "base_layers": int,
             "top_layers": int,
-            "infill": "cubic" | "hexagonal"
+            "infill": "square" | "hexagonal"
         }
         """
         self.params = params
@@ -31,9 +33,10 @@ class Slicer:
         self.path = path
         self.load_part()
         self.layer_edges = self.create_raw_slices()
-        self.slice_polygons = self.slice_to_polly(self.layer_edges)
+        # self.slice_polygons = self.slice_to_polly(self.layer_edges)
 
-        print(self.slice_polygons[530])
+        self.lattice = self.generate_lattice()
+        self.plot_layer_edge(200)
 
         
     def load_part(self) -> None:
@@ -131,7 +134,7 @@ class Slicer:
         Input: 
             layer: int
         """
-        plt.figure()
+        # plt.figure()
 
         layer_edge = self.layer_edges[layer]
 
@@ -154,4 +157,35 @@ class Slicer:
                 return True
             
         return False
+
+    def generate_lattice(self) -> Shape:
+        """
+        Generate a set lattice for the infill
+        """
+        size = self.params["infill_size"]
+        infill_type = self.params["infill"]
+
+        if infill_type == "square":
+            latt = lp.Lattice.square(size)
+            latt.add_atom()
+            latt.add_connections()
+        if infill_type == "triangle":
+            latt = lp.Lattice.hexagonal(size)
+            latt.add_atom()
+            latt.add_connections()
+        if infill_type == "hexagon":
+            latt = lp.graphene(size)
+
+        s = latt.build((self.x_range[1] + 2*size, self.y_range[1] + 2*size), pos = (-size,-size))
+
+        ax = latt.plot()
+        s.plot(ax)
+
+        return s
+
+
+
+
+
+
 
