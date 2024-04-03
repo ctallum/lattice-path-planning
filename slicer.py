@@ -13,28 +13,17 @@ from matplotlib.patches import Polygon
 
 
 class Slicer:
-    def __init__(self):
+    def __init__(self, params: Dict):
         """
-        Initialize Slicer object
-        """
-        self.params_set = False
-
-    def set_params(self, params: Dict) -> None:
-        """
-        Set common 3D printing parameters. Takes input dictionary with following values:
-        Dict{
+        Initialize Slicer object with parameters dictionary
+        Params: {
             "layer_height": float,
             "base_layers": int,
             "top_layers": int,
-            "infill": str [cubic, hexagonal]
+            "infill": "cubic" | "hexagonal"
         }
         """
-        self.layer_height = params["layer_height"]
-        self.base_layers = params["base_layers"]
-        self.top_layers = params["top_layers"]
-        self.infill = params["infill"]
-        
-        self.params_set = True
+        self.params = params
 
     def slice(self, path: str) -> None:
         """
@@ -42,14 +31,10 @@ class Slicer:
         """
         self.path = path
         self.load_part()
+        self.layer_edges = self.create_raw_slices()
+        self.slice_polygons = self.slice_to_polly(self.layer_edges)
 
-        # Ensure that all parameters have been set before moving on
-        if not self.params_set:
-            print("ERROR: Please set slicer prameters")
-            return
-        
-        self.create_slices()
-
+        print(self.slice_polygons[530])
 
         
     def load_part(self) -> None:
@@ -76,25 +61,36 @@ class Slicer:
                         Z=self.mesh.vertices[:,2], 
                         alpha=.4)
         
-    def create_slices(self) -> None:
+    def create_raw_slices(self) -> np.ndarray:
         """
         Take model and parameters and slice model uniformly along the xy axis. 
-        Creates self.layers_edges: List[np.ndarray(n_layers,2,2)]
+        Returns List[List[Polygon]]
         """
 
-        layer_heights = np.arange(0, self.z_range[1], self.layer_height)
+        layer_heights = np.arange(0, self.z_range[1], self.params["layer_height"])
         self.n_layers = np.size(layer_heights)
-        self.layer_edges, _, _ = trimesh.intersections.mesh_multiplane(self.mesh, np.zeros((3)), np.array([0,0,1]), layer_heights)
+        layer_edges, _, _ = trimesh.intersections.mesh_multiplane(self.mesh, np.zeros((3)), np.array([0,0,1]), layer_heights)
+        
+        return layer_edges
 
-        self.edge_polygons = []
+    def slice_to_polly(self, layer_edges: np.ndarray) -> List[List[Polygon]]:
+        """
+        Convert the raw edge data into a set of polygons
+        """
+        slices = []
         for layer in range(self.n_layers):
-            re_ordered_edge = self.reorder_edges(self.layer_edges[layer])
-            self.all_edge_polygons.append(self.layer_to_polygon(re_ordered_edge))
+            re_ordered_edge = self.reorder_edges(layer_edges[layer])
+            polygons = []
+            for ring in re_ordered_edge:
+                polygons.append(Polygon(ring))
+            slices.append(polygons)
+        
+        return slices
 
 
     def reorder_edges(self,coordinates) -> List[np.ndarray]:
         """
-        Iterate through all set of edges and re-order them. Also split into seperate rings if needed
+        Iterate through all set of edges and re-order them. Also split into separate rings if needed
         """
         coordinates = np.around(coordinates,4).tolist()
         reordered_coords = []
@@ -126,14 +122,6 @@ class Slicer:
                 edge_rings.append(ring[:,0,:])
 
         return edge_rings
-
-    def layer_to_polygon(self, layer_edge: List[np.ndarray]) -> List[Polygon]:
-        polygons = []
-        for ring in layer_edge:
-            polygons.append(Polygon(ring))
-
-        return polygons
-
         
     def plot_layer_edge(self, layer: int) -> None:
         """
@@ -152,11 +140,16 @@ class Slicer:
         """
         Calculate the number of distinct closed regions for any given layer
         """
-        return len(self.edge_polygons[layer])
+        return len(self.slice_polygons[layer])
 
     def is_in_layer(self, layer: int, point: Tuple[float,float]):
         """
         Calculate if a given point is within the model at a given layer
         """
-        return self.edge_polygons[layer].get_path().contains_point(point)
+        
+        for poly in self.slice_polygons[layer]:
+            if poly.get_path().contains_point(point):
+                return True
+            
+        return False
 
