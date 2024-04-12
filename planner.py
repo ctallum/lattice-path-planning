@@ -57,8 +57,9 @@ class Planner:
         """
 
         poly_points = (polygon.get_xy().tolist())
-        
 
+
+        # find a starting node on edge that intersects with infill
         for start_node, attributes in graph.nodes(data=True):
             for idx in range(len(poly_points) - 1):
                 p1 = tuple(poly_points[idx])
@@ -67,24 +68,22 @@ class Planner:
 
                 if are_collinear(p1,p2,p3):
                     break
-        # insert break
+        
+        # create new polygon that starts and stops at intersection
         poly_points =  [[attributes["x"],attributes["y"]]] +  poly_points[idx+1:-1] + poly_points[0:idx+1] +  [[attributes["x"],attributes["y"]]]
 
+        # create tree root
         root = TreeNode(pos=poly_points[0], is_boundary=True)
         cur = root
 
-        
+        # loop around the border and add to tree
         for poly_point_idx in range(len(poly_points) - 1):
-
             next_points = poly_points[poly_point_idx + 1]
-            
             new_node = TreeNode(pos=next_points, is_boundary=True, parent=cur)
-            
             cur.children.append(new_node)
-            
             cur = new_node 
 
-        # dfs through netwrokx graph
+        # work through lattice and create a spanning tree vis DPS
 
         visited = set()  # Set to keep track of visited nodes
         tree_edges = []  # List to store edges of the spanning tree
@@ -104,8 +103,10 @@ class Planner:
 
         dfs(start_node, None)
 
+        # create a dictionary to hold the nodes of the lattice
         unique_nodes = {}
-        # get unique values
+
+        # get unique nodes and insert into dictionary
         for edge in tree_edges:
             node_1, node_2 = edge
             if node_1 not in unique_nodes.keys():
@@ -113,15 +114,18 @@ class Planner:
             if node_2 not in unique_nodes.keys():
                 unique_nodes[node_2] = TreeNode()
         
-        test_idx = 0
-        
-        unique_nodes[tree_edges[0][1]].parent = cur
+        # connect the first visited node to the end of the loop tree
+        lat_root = unique_nodes[tree_edges[0][1]]
+        lat_root.parent = cur
+        cur.children.append(lat_root) 
 
+        # using tree_edge list, establish connectivity between nodes
         for edge in tree_edges[1:]:
             parent_idx, child_idx = edge
             parent = unique_nodes[parent_idx]
             child = unique_nodes[child_idx]
 
+            # if the node has already been used, create new one at same spot, but now leaf
             if child.parent:
                 child = TreeNode()
 
@@ -132,15 +136,9 @@ class Planner:
             child.pos = child_pos
 
             parent.children.append(child)
-            child.parent = parent
+            child.parent = parent        
 
-
-
-        lat_root = unique_nodes[tree_edges[0][1]]
-        # print(tree_edges)
-
-        cur.children.append(lat_root)    
-
+           
         self.plot_tree(root)
         
     
@@ -166,8 +164,6 @@ def are_collinear(p1, p2, p3):
     # Calculate slopes
     slope1 = (y2 - y1) * (x3 - x2)
     slope2 = (y3 - y2) * (x2 - x1)
-
-    # print(slope1,slope2)
 
     # If slopes are equal, points are collinear
     return abs(slope1 - slope2) <.00001
