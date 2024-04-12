@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from collections import deque
+import math
 
 # import sys
 # sys.setrecursionlimit(5000)
@@ -132,6 +133,7 @@ class Planner:
             parent = unique_nodes[parent_idx]
             child = unique_nodes[child_idx]
 
+
             # if the node has already been used, create new one at same spot, but now leaf
             if child.parent:
                 child = TreeNode()
@@ -163,6 +165,19 @@ class Planner:
 
         def dfs(node) -> None:
             points.append(node.pos)
+
+            # calc relative angles to next point
+            rel_angles = []
+            if len(node.children) > 1:
+                for child in node.children:
+                    v_0 = np.array(node.pos).reshape((2, 1))
+                    v_1 = np.array(node.parent.pos).reshape((2, 1))
+                    v_2 = np.array(child.pos).reshape((2, 1))
+                    rel_angles.append(angle(v_0,v_1,v_2)) 
+
+                # reorder children
+                node.children = [x for _, x in sorted(zip(rel_angles, node.children), key=lambda pair: pair[0])]
+
             for child in node.children:
                 dfs(child)
             
@@ -190,3 +205,48 @@ def are_collinear(p1, p2, p3):
 
     # If slopes are equal, points are collinear
     return abs(slope1 - slope2) <.00001
+
+def angle(vertex0, vertex_1, vertex_2, angle_type='unsigned'):
+    """
+    Compute the angle between two edges  vertex0-- vertex_1 and  vertex0--
+    vertex_2 having an endpoint in common. The angle is computed by starting
+    from the edge  vertex0-- vertex_1, and then ``walking'' in a
+    counterclockwise manner until the edge  vertex0-- vertex_2 is found.
+    """
+    # tolerance to check for coincident points
+    tol = 2.22e-16
+
+    # compute vectors corresponding to the two edges, and normalize
+    vec1 = vertex_1 - vertex0
+    vec2 = vertex_2 - vertex0
+
+    norm_vec1 = np.linalg.norm(vec1)
+    norm_vec2 = np.linalg.norm(vec2)
+    if norm_vec1 < tol or norm_vec2 < tol:
+        # vertex_1 or vertex_2 coincides with vertex0, abort
+        edge_angle = math.nan
+        return edge_angle
+
+    vec1 = vec1 / norm_vec1
+    vec2 = vec2 / norm_vec2
+
+    # Transform vec1 and vec2 into flat 3-D vectors,
+    # so that they can be used with np.inner and np.cross
+    vec1flat = np.vstack([vec1, 0]).flatten()
+    vec2flat = np.vstack([vec2, 0]).flatten()
+
+    c_angle = np.inner(vec1flat, vec2flat)  # cos(theta) between two edges
+    s_angle = np.inner(np.array([0, 0, 1]), np.cross(vec1flat, vec2flat))
+
+    edge_angle = math.atan2(s_angle, c_angle)
+
+    angle_type = angle_type.lower()
+    if angle_type == 'signed':
+        # nothing to do
+        pass
+    elif angle_type == 'unsigned':
+        edge_angle = (edge_angle + 2 * math.pi) % (2 * math.pi)
+    else:
+        raise ValueError('Invalid argument angle_type')
+
+    return edge_angle
