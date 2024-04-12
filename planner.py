@@ -50,8 +50,15 @@ class Planner:
             for region_idx, graph in enumerate(self.layer_graphs[layer_idx]):
                 polygon = self.layer_polygons[layer_idx][region_idx]
                 tree = self.generate_spanning_tree(polygon, graph)
+                path = self.generate_path(tree)
+                # print(path)
+                for point in path:
+                    plt.plot(*point,"ok")
+                    plt.pause(.01)
 
-    def generate_spanning_tree(self, polygon: Polygon, graph: nx.Graph):
+
+
+    def generate_spanning_tree(self, polygon: Polygon, graph: nx.Graph) -> TreeNode:
         """
         Given the bounding polygon and infill, generate a tree that first covers all the outside edges, then then inside
         """
@@ -136,10 +143,13 @@ class Planner:
             child.pos = child_pos
 
             parent.children.append(child)
-            child.parent = parent        
+            child.parent = parent     
 
+        self.plot_tree(root)   
+
+        return root
            
-        self.plot_tree(root)
+        
         
     
     def plot_tree(self, node: TreeNode) -> None:
@@ -148,8 +158,21 @@ class Planner:
             self.plot_tree(child)
             
 
-    def generate_path(self, params):
-        pass
+    def generate_path(self, tree: TreeNode) -> List:
+        points = []
+
+        def dfs(node) -> None:
+            points.append(node.pos)
+            for child in node.children:
+                dfs(child)
+            
+            if not node.children and node.parent:
+                points.append(node.parent.pos)
+
+        dfs(tree)
+        
+        return points
+
 
     def generate_gcode(self, params):
         pass
