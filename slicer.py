@@ -9,7 +9,10 @@ import trimesh
 from matplotlib.patches import Polygon
 from tqdm import tqdm
 import lattpy as lp
-from lattpy import Shape
+from lattpy import Shape, Lattice, ConvexHull
+import networkx as nx
+from shapely.geometry import LineString, Point
+from collections import defaultdict
 
 
 
@@ -30,20 +33,27 @@ class Slicer:
         """
         Take input model path and slice according to pre-set parameters
         """
-        self.path = path
-        self.load_part()
-        self.layer_edges = self.create_raw_slices()
-        # self.slice_polygons = self.slice_to_polly(self.layer_edges)
-
+        self.load_part(path)
         self.lattice = self.generate_lattice()
-        self.plot_layer_edge(200)
+
+        # First layer generation
+        self.layer_edges = self.create_raw_slices()
+
+        self.n_layers = 1 # for debug, to keep runtime down
+
+        # layer cleanup to create graphs
+        self.slice_polygons = self.slice_to_polly(self.layer_edges)
+        self.layer_graphs = self.generate_layer_graphs(self.lattice, self.slice_polygons)
+
+
+        self.plot_layer_graph(0)
 
         
-    def load_part(self) -> None:
+    def load_part(self, path: str) -> None:
         """
         Preform all the necessary initializations when loading a model from a file
         """
-        self.mesh = trimesh.load(self.path)
+        self.mesh = trimesh.load(path)
         self.mesh.rezero()
         self.bound = self.mesh.bounds
         self.x_range = self.bound[:,0]
@@ -90,6 +100,7 @@ class Slicer:
                 polygons.append(Polygon(ring))
             slices.append(polygons)
             pbar.update(1)
+
         return slices
 
 
@@ -158,7 +169,7 @@ class Slicer:
             
         return False
 
-    def generate_lattice(self) -> Shape:
+    def generate_lattice(self) -> Lattice:
         """
         Generate a set lattice for the infill
         """
@@ -178,14 +189,193 @@ class Slicer:
 
         s = latt.build((self.x_range[1] + 2*size, self.y_range[1] + 2*size), pos = (-size,-size))
 
-        ax = latt.plot()
-        s.plot(ax)
+        # ax = latt.plot()
+        # s.plot(ax)
 
-        return s
-
-
+        return latt
 
 
+    def generate_layer_graphs(self, lattice: lp.Lattice, layer_polygons: List[List[Polygon]]) -> List[List[nx.Graph]]:
+        """
+        Given the layer polygon and lattice, generate a networkx of the union
+        """
+    
+        # update bar
+        pbar = tqdm(total=self.n_layers,desc = "Converting Layer to Graph")
+
+        layer_graphs = []
+        for layer_idx in range(self.n_layers):
+            polygons = self.slice_polygons[layer_idx]
+
+            graphs = []
+        
+            for polygon in polygons:
+
+                # get all unique lattice points and edges
+                lat_points = []
+                lat_edges = []
+
+                for idx in range(lattice.num_sites):
+                    lat_points.append(lattice.position(idx).tolist())
+                    site_neighbors = lattice.neighbors(idx)
+                    for neighbor in site_neighbors:
+                        if neighbor > idx:
+                            lat_edges.append([idx, neighbor])
+                        else: 
+                            lat_edges.append([neighbor, idx])
+
+                lat_edges = np.unique(np.array(lat_edges),axis=0).tolist()
+
+                # get all bounding polygon points
+                poly_points = polygon.get_xy()
+                
+                # iterate through all polygon edges and lattice edges to find intersecting sets
+                problem_edges = defaultdict(list)
+
+                # calc ahead of time all 
+
+                for poly_point_idx in range(len(poly_points) - 1):
+                    A = poly_points[poly_point_idx ,:]
+                    B = poly_points[poly_point_idx + 1,:]
+                    
+                    # iterate through all edges in the lattice
+                    for edge_idx, edge in enumerate(lat_edges):
+                        C = lat_points[edge[0]]
+                        D = lat_points[edge[1]]
+                        
+                        # see if polygon line AB intersects with lattice line CD
+                        if intersect(A,B,C,D):
+
+                            # calc where they intersected
+                            line1 = LineString([A, B])
+                            line2 = LineString([C, D])
+                            int_pt = line1.intersection(line2)
+                            int_coord = (int_pt.x, int_pt.y)
+
+                            # label this edge as problematic
+                            problem_edges[edge_idx].append(int_coord)
+
+                # define a new set of points and lines. These will replace the lines that intersect. They are the trimmed lines
+                new_points = []
+                new_edges = []
+
+                # go through each problematic line
+                for edge_idx, intersects in problem_edges.items():
+                    
+                    # get all the critical points in the problematic line in order
+                    A = lat_points[lat_edges[edge_idx][0]]
+                    B = lat_points[lat_edges[edge_idx][1]]
+
+                    ordered_list = [A,B]
+
+                    for coord in intersects:
+                        ordered_list.append(list(coord))
+                    
+                    dist = lambda a : np.linalg.norm(np.array(A) - np.array(a))
+                    ordered_list.sort(key=dist)
+
+                    # calculate whether the sub line segment of problem line is in or outside of the polygon
+                    mid_points = []
+                    for idx in range(len(ordered_list) -1):
+                        start = ordered_list[idx]
+                        end = ordered_list[idx + 1]
+                        mid_points.append([(start[0] + end[0])/2, (start[1] + end[1])/2])
+
+                    # get the line segments that are valid
+                    valid_mids =  polygon.get_path().contains_points(np.array(mid_points))
+
+                    # add the valid section of the problem line to the new points/new edges
+                    for idx in range(len(ordered_list) -1):
+                        start = ordered_list[idx]
+                        end = ordered_list[idx + 1]
+
+                        if valid_mids[idx]:
+                            new_points.append(start)
+                            new_points.append(end)
+                            new_edges.append([len(new_points) - 2,len(new_points)-1])
+                
+                # remove all the original problem edges
+                cleaned_edges =[lat_edges[i] for i in range(len(lat_edges)) if i not in problem_edges.keys()]
+
+                # create a list for our final edges
+                final_edges = []
+
+                # find all edges that connect to outside points
+                inside_points = polygon.get_path().contains_points(np.array(lat_points))
+                bad_points_idx = [idx for idx,val in enumerate(inside_points) if not val]
+                
+                # only add edges to final edges if they do not touch outside points
+                for edge in cleaned_edges:
+                    if edge[0] not in bad_points_idx and edge[1] not in bad_points_idx:
+                        final_edges.append(edge)
 
 
+                # add valid lattice points to final points
+                offset = len(lat_points)
+                final_points = lat_points + new_points
 
+                for idx,edge in enumerate(new_edges):
+                    new_edges[idx][0] += offset
+                    new_edges[idx][1] += offset
+
+                final_edges += new_edges
+
+
+                # add all polygon edges to final edges and final points
+                offset = len(final_points)
+
+                for poly_point_idx in range(len(poly_points) - 1):
+                    A = poly_points[poly_point_idx ,:]
+                    B = poly_points[poly_point_idx + 1,:]
+                    final_points.append(A)
+                    final_points.append(B)
+                    final_edges.append([offset + poly_point_idx*2, offset + poly_point_idx*2 + 1])
+
+                # create graph
+                G = nx.Graph()
+
+                # create networkx vertex and edge data types
+                graph_vertices = [(idx,{"x":val[0], "y":val[1]}) for idx,val in enumerate(final_points)]
+                graph_edges = [tuple(i) for i in final_edges]
+
+                G.add_nodes_from(graph_vertices)
+                G.add_edges_from(graph_edges)
+
+                # remove all isolated vertices
+                G.remove_nodes_from(list(nx.isolates(G)))
+
+                # nx.draw(G, pos=posgen(G),node_size = 1)
+
+                # add graph to collection of graphs per layer
+                graphs.append(G)
+            
+            layer_graphs.append(graphs)
+            
+            pbar.update(1)
+
+        return layer_graphs
+    
+    def plot_layer_graph(self, layer: int) -> None:
+        """
+        Plot the networkx graph for a given layer
+        """
+        for G in self.layer_graphs[layer]:
+            plt.figure()
+
+            nx.draw(G, pos=posgen(G), node_size = 1)
+            
+        
+
+
+def ccw(A,B,C):
+    return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
+
+# Return true if line segments AB and CD intersect
+def intersect(A,B,C,D):
+    return ccw(A,C,D) != ccw(B,C,D) and ccw(A,B,C) != ccw(A,B,D)
+
+def posgen(G):
+    ret = {}
+    for n in G:
+        ret[n] = [G.nodes[n]["x"],G.nodes[n]["y"]]
+    return ret
