@@ -11,6 +11,9 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from collections import deque
 
+# import sys
+# sys.setrecursionlimit(5000)
+
 class TreeNode(object):
     def __init__(self, pos: Tuple[float, float] = None, parent = None, children: List = None, is_boundary = False):
         self.pos = pos
@@ -110,6 +113,9 @@ class Planner:
             if node_2 not in unique_nodes.keys():
                 unique_nodes[node_2] = TreeNode()
         
+        test_idx = 0
+        
+        unique_nodes[tree_edges[0][1]].parent = cur
 
         for edge in tree_edges[1:]:
             parent_idx, child_idx = edge
@@ -129,7 +135,11 @@ class Planner:
             child.parent = parent
 
 
-        cur.children.append(unique_nodes[tree_edges[0][1]])    
+
+        lat_root = unique_nodes[tree_edges[0][1]]
+        # print(tree_edges)
+
+        cur.children.append(lat_root)    
 
         self.plot_tree(root)
         

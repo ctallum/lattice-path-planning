@@ -9,8 +9,8 @@ if __name__ == "__main__":
         "layer_height": 0.2,
         "base_layers": 2,
         "top_layers": 2,
-        "infill": "hexagon", # can also do "triangle" and "square"
-        "infill_size": 10
+        "infill": "triangle", # can also do "triangle" and "square"
+        "infill_size": 6
     }
 
     slicer = Slicer(params)
