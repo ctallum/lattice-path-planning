@@ -54,7 +54,7 @@ class Planner:
                 path = self.generate_path(tree)
                 # print(path)
                 for point in path:
-                    plt.plot(*point,"ok")
+                    plt.plot(*point,'o')
                     plt.pause(.01)
 
 
@@ -180,9 +180,10 @@ class Planner:
 
             for child in node.children:
                 dfs(child)
-            
-            if not node.children and node.parent:
+
+            if node.parent:
                 points.append(node.parent.pos)
+
 
         dfs(tree)
         
