@@ -9,12 +9,13 @@ import trimesh
 from matplotlib.patches import Polygon
 from tqdm import tqdm
 import lattpy as lp
-from lattpy import Shape, Lattice, ConvexHull
+from lattpy import Lattice
 import networkx as nx
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString
 from collections import defaultdict
+import osmnx
 
-
+from planner import Planner
 
 class Slicer:
     def __init__(self, params: Dict):
@@ -42,11 +43,15 @@ class Slicer:
         self.n_layers = 1 # for debug, to keep runtime down
 
         # layer cleanup to create graphs
-        self.slice_polygons = self.slice_to_polly(self.layer_edges)
-        self.layer_graphs = self.generate_layer_graphs(self.lattice, self.slice_polygons)
+        self.layer_polygons = self.slice_to_polly(self.layer_edges)
+        self.layer_graphs = self.generate_layer_graphs(self.lattice, self.layer_polygons)
 
 
-        self.plot_layer_graph(0)
+        # self.plot_layer_graph(0)
+
+        self.planner = Planner(self.params, self.layer_polygons, self.layer_graphs)
+
+        self.planner.plan()
 
         
     def load_part(self, path: str) -> None:
@@ -205,7 +210,7 @@ class Slicer:
 
         layer_graphs = []
         for layer_idx in range(self.n_layers):
-            polygons = self.slice_polygons[layer_idx]
+            polygons = self.layer_polygons[layer_idx]
 
             graphs = []
         
@@ -256,10 +261,11 @@ class Slicer:
                             problem_edges[edge_idx].append(int_coord)
 
                 # define a new set of points and lines. These will replace the lines that intersect. They are the trimmed lines
-                new_points = []
-                new_edges = []
+
+
 
                 # go through each problematic line
+                critical_points = []
                 for edge_idx, intersects in problem_edges.items():
                     
                     # get all the critical points in the problematic line in order
@@ -290,9 +296,20 @@ class Slicer:
                         end = ordered_list[idx + 1]
 
                         if valid_mids[idx]:
-                            new_points.append(start)
-                            new_points.append(end)
-                            new_edges.append([len(new_points) - 2,len(new_points)-1])
+                            if start == A:
+                                lat_points.append(end)
+                                lat_edges.append([lat_edges[edge_idx][0], len(lat_points)-1])
+                                critical_points.append(end)
+                            elif end == B:
+                                lat_points.append(start)
+                                lat_edges.append([len(lat_points)-1, lat_edges[edge_idx][1]])
+                                critical_points.append(start)
+                            else:
+                                lat_points.append(start)
+                                lat_points.append(end)
+                                lat_edges.append([len(lat_points)-2, len(lat_points)-1])
+                                critical_points.append(start)
+                                critical_points.append(end)
                 
                 # remove all the original problem edges
                 cleaned_edges =[lat_edges[i] for i in range(len(lat_edges)) if i not in problem_edges.keys()]
@@ -302,7 +319,8 @@ class Slicer:
 
                 # find all edges that connect to outside points
                 inside_points = polygon.get_path().contains_points(np.array(lat_points))
-                bad_points_idx = [idx for idx,val in enumerate(inside_points) if not val]
+
+                bad_points_idx = [idx for idx,val in enumerate(inside_points) if not val and lat_points[idx] not in critical_points]
                 
                 # only add edges to final edges if they do not touch outside points
                 for edge in cleaned_edges:
@@ -312,24 +330,25 @@ class Slicer:
 
                 # add valid lattice points to final points
                 offset = len(lat_points)
-                final_points = lat_points + new_points
+                final_points = lat_points 
+                # final_edges = lat_edges
 
-                for idx,edge in enumerate(new_edges):
-                    new_edges[idx][0] += offset
-                    new_edges[idx][1] += offset
+                # for idx,edge in enumerate(new_edges):
+                #     new_edges[idx][0] += offset
+                #     new_edges[idx][1] += offset
 
-                final_edges += new_edges
+                # # final_edges = new_edges
 
 
                 # add all polygon edges to final edges and final points
-                offset = len(final_points)
+                # offset = len(final_points)
 
-                for poly_point_idx in range(len(poly_points) - 1):
-                    A = poly_points[poly_point_idx ,:]
-                    B = poly_points[poly_point_idx + 1,:]
-                    final_points.append(A)
-                    final_points.append(B)
-                    final_edges.append([offset + poly_point_idx*2, offset + poly_point_idx*2 + 1])
+                # for poly_point_idx in range(len(poly_points) - 1):
+                #     A = poly_points[poly_point_idx ,:]
+                #     B = poly_points[poly_point_idx + 1,:]
+                #     final_points.append(A)
+                #     final_points.append(B)
+                #     final_edges.append([offset + poly_point_idx*2, offset + poly_point_idx*2 + 1])
 
                 # create graph
                 G = nx.Graph()
@@ -347,6 +366,7 @@ class Slicer:
                 # nx.draw(G, pos=posgen(G),node_size = 1)
 
                 # add graph to collection of graphs per layer
+                G = G.to_undirected()
                 graphs.append(G)
             
             layer_graphs.append(graphs)
@@ -362,7 +382,7 @@ class Slicer:
         for G in self.layer_graphs[layer]:
             plt.figure()
 
-            nx.draw(G, pos=posgen(G), node_size = 1)
+            nx.draw(G, pos=posgen(G), node_size = 1, with_labels=True)
             
         
 
