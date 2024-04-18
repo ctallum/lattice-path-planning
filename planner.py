@@ -15,8 +15,6 @@ from shapely import LineString, LinearRing
 from shapely import buffer
 import shapely as shp
 
-# import sys
-# sys.setrecursionlimit(5000)
 
 class TreeNode(object):
     def __init__(self, pos: Tuple[float, float] = None, node = None, parent = None, children: List = None, is_boundary = False):
@@ -57,13 +55,12 @@ class Planner:
                 point_path = self.generate_path(tree)
 
                 line = LineString(point_path)
-                offset_path = np.array(line.buffer(.025).exterior.coords)
+                offset_path = np.array(line.buffer(.5*self.params["line_width"]).exterior.coords)
                 print(offset_path)
 
 
                 plt.plot(*offset_path.T,"-b")
                 plt.axis('equal')
-                
                 
 
     def generate_spanning_tree(self, polygon: Polygon, graph: nx.Graph) -> TreeNode:
@@ -86,6 +83,8 @@ class Planner:
         # get list of connected graphs
         connected_components = list(nx.connected_components(graph))
 
+        
+
         # for each subgraph, find an end piece
         end_nodes = []
         
@@ -107,7 +106,7 @@ class Planner:
                       (graph.nodes[node]["x"],graph.nodes[node]["y"])]
             best_dist = math.inf
             best_point = None
-            for idx in range(len(poly_points) - 1):
+            for idx in range(len(poly_points) - 1):    
                 line_2 = [tuple(poly_points[idx]), tuple(poly_points[idx+1])]
 
                 # find best intersection point
@@ -156,6 +155,8 @@ class Planner:
         new_edges.append((max(graph.nodes) - len(new_end_nodes)- len(poly_points)+2, max(graph.nodes) - len(new_end_nodes)))
 
         graph.add_edges_from(new_edges)
+
+        print(len(new_end_nodes))
    
         # nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=False)
 
@@ -328,7 +329,7 @@ def line_equation(point1, point2):
     else:
         slope = (y2 - y1) / (x2 - x1)
         intercept = y1 - slope * x1
-    
+
     return slope, intercept
 
 def intersection_point(line1, line2):
@@ -340,7 +341,23 @@ def intersection_point(line1, line2):
     
     # Check if lines are parallel
     if m1 == m2:
-        return None  # Lines are parallel, no intersection
+        # Check if both lines are vertical and coincident
+        if m1 is None and m2 is None and c1 == c2:
+            return "Coincident"
+        else:
+            return None  # Lines are parallel, no intersection
+    
+    # Check if line1 is vertical
+    if m1 is None:
+        x = c1
+        y = m2 * x + c2
+        return x, y
+    
+    # Check if line2 is vertical
+    if m2 is None:
+        x = c2
+        y = m1 * x + c1
+        return x, y
     
     # Calculate intersection point
     x = (c2 - c1) / (m1 - m2)
