@@ -3,6 +3,7 @@ import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
+from slicer import Slicer
 
 def posgen(G):
     ret = {}
@@ -92,7 +93,6 @@ def create_path(G: nx.Graph, tree: nx.Graph, width: float, fnx):
         ff_path.append(sortwith_edgeangles(obn_a))
         
 
-
 def create_gcode(): #TODO
     pass     
         
@@ -138,10 +138,24 @@ def spanning_trees(G):
     recurse_cont_del([], p_edges, array_to_fill, n_nodes-1)
     return [nx.Graph(d_edges[i] for i in e) for e in array_to_fill]
 
+# path = "./models/bunny.stl"
+
+# params = {
+#     "layer_height": 0.2,
+#     "base_layers": 2,
+#     "top_layers": 2,
+#     "infill": "triangle", # can also do "triangle" and "square"
+#     "infill_size": 5,
+#     "line_width": 0.1
+# }
+
+# GX = Slicer(params)
+# GX.slice(path)
+# G=GX.layer_graphs[0][0]
+
 
 G.add_nodes_from(data1)
 G.add_edges_from(data2)
-
 print("Num of Possible Unique Spanning Trees:", n_stree(G))
 #print(len(G.edges))
 #print(len(G.nodes))
