@@ -18,9 +18,9 @@ def colgen(G):
         #print(n)
         #print(G.edges)
         if n[0] <= -1 or n[1] <= -1:
-            ret.append('b')
-        else:
             ret.append('lightgreen')
+        else:
+            ret.append('darkblue')
     return ret
 G = nx.Graph()
 
@@ -48,9 +48,12 @@ data2 = [(0,1),
          (7,8)
          ]
 
-def which_paths(x : int):
-    return [True] * x
+def which_paths(x : int): #TODO optional way to pick a path out of 2^(x) paths
+    return [False] * x
     
+def sortwith_edgeangles(arrayx): #TODO algorithm to pick edge needed / based on angles??
+    pass
+
 
 def create_path(G: nx.Graph, tree: nx.Graph, width: float, fnx):
     l_ed = []
@@ -67,15 +70,30 @@ def create_path(G: nx.Graph, tree: nx.Graph, width: float, fnx):
             unx = np.array([G.nodes[l_ed[i][0]]["x"]-G.nodes[l_ed[i][1]]["x"],G.nodes[l_ed[i][0]]["y"]-G.nodes[l_ed[i][1]]["y"]])
             unx_hat = unx / np.linalg.norm(unx)
             G.add_node(-(i+1), **({"x": (unx_hat*width)[0]+G.nodes[l_ed[i][1]]["x"], "y": (unx_hat*width)[1]+G.nodes[l_ed[i][1]]["y"]}) )
-            G.add_edge(l_ed[i][1], -(i+1))
+            G.add_edge(l_ed[i][0], -(i+1))
         else:
             unx = np.array([G.nodes[l_ed[i][1]]["x"]-G.nodes[l_ed[i][0]]["x"],G.nodes[l_ed[i][1]]["y"]-G.nodes[l_ed[i][0]]["y"]])
             unx_hat = unx / np.linalg.norm(unx)
             G.add_node(-(i+1), **({"x": (unx_hat*width)[0]+G.nodes[l_ed[i][0]]["x"], "y": (unx_hat*width)[1]+G.nodes[l_ed[i][0]]["y"]}) )
-            G.add_edge(l_ed[i][0], -(i+1))
-    #t_p = list(nx.dfs_edges(tree, source=0))
+            G.add_edge(l_ed[i][1], -(i+1))
+    t_p = list(nx.dfs_edges(G, source=0))
+    print(t_p)
+    ff_path = []
+    for i in range(len(t_p)):
+        obn_a = []
+        crx = t_p[i]
+        crxt = crx[1]
+        CX=0
+        for edg in t_p:
+            CX+=1
+            if (edg[0]==crxt or edg[1]==crxt) and (edg != crx):
+                obn_a.append(edg)
+                print(obn_a, crx, CX)
+        ff_path.append(sortwith_edgeangles(obn_a))
         
-def create_gcode():
+
+
+def create_gcode(): #TODO
     pass     
         
 def n_stree(G) -> int:
@@ -128,17 +146,13 @@ print("Num of Possible Unique Spanning Trees:", n_stree(G))
 #print(len(G.edges))
 #print(len(G.nodes))
 print("DBG: ", end='')
-
+SDX = 86
 all_span = spanning_trees(G)
-create_path(G, all_span[82], 0.2, which_paths)
+create_path(G, all_span[SDX], 0.2, which_paths)
 print(G.nodes)
 #print(all_span)
-
 pos = posgen(G)
-
-
-ccxc = 82
-
+#ccxc = 82
 # def onclickA(event):
 #     global ccxc
 #     global bnbtn
@@ -155,5 +169,5 @@ ccxc = 82
 # bnbtn.on_clicked(onclickA)
 
 nx.draw(G, pos, with_labels=True, node_color='lightblue', node_size=200, edge_color=colgen(G))
-nx.draw(all_span[82], pos, with_labels=True, node_color='green', node_size=200, edge_color='r')
+nx.draw(all_span[SDX], pos, with_labels=True, node_color='green', node_size=200, edge_color='r')
 plt.show()
