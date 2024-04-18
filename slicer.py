@@ -12,8 +12,9 @@ import lattpy as lp
 from lattpy import Lattice
 import networkx as nx
 from shapely.geometry import LineString
+import shapely as shp
 from collections import defaultdict
-import osmnx
+
 
 from planner import Planner
 
@@ -48,6 +49,7 @@ class Slicer:
 
 
         # self.plot_layer_graph(0)
+        # self.plot_layer_edge(0)
 
         self.planner = Planner(self.params, self.layer_polygons, self.layer_graphs)
 
@@ -194,9 +196,6 @@ class Slicer:
 
         s = latt.build((self.x_range[1] + 2*size, self.y_range[1] + 2*size), pos = (-size,-size))
 
-        # ax = latt.plot()
-        # s.plot(ax)
-
         return latt
 
 
@@ -232,7 +231,19 @@ class Slicer:
                 lat_edges = np.unique(np.array(lat_edges),axis=0).tolist()
 
                 # get all bounding polygon points
+
+
+                # 
+                
                 poly_points = polygon.get_xy()
+
+                buffer_poly = shp.Polygon(poly_points).buffer(-2.5*self.params["line_width"])
+                buffer_poly_points = np.array(buffer_poly.exterior.coords.xy).T
+                
+                polygon = Polygon(buffer_poly_points)
+                poly_points = polygon.get_xy()
+
+
                 
                 # iterate through all polygon edges and lattice edges to find intersecting sets
                 problem_edges = defaultdict(list)
@@ -329,26 +340,7 @@ class Slicer:
 
 
                 # add valid lattice points to final points
-                offset = len(lat_points)
                 final_points = lat_points 
-                # final_edges = lat_edges
-
-                # for idx,edge in enumerate(new_edges):
-                #     new_edges[idx][0] += offset
-                #     new_edges[idx][1] += offset
-
-                # # final_edges = new_edges
-
-
-                # add all polygon edges to final edges and final points
-                # offset = len(final_points)
-
-                # for poly_point_idx in range(len(poly_points) - 1):
-                #     A = poly_points[poly_point_idx ,:]
-                #     B = poly_points[poly_point_idx + 1,:]
-                #     final_points.append(A)
-                #     final_points.append(B)
-                #     final_edges.append([offset + poly_point_idx*2, offset + poly_point_idx*2 + 1])
 
                 # create graph
                 G = nx.Graph()
