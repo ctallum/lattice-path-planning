@@ -56,7 +56,7 @@ class Planner:
 
                 line = LineString(point_path)
                 offset_path = np.array(line.buffer(.5*self.params["line_width"]).exterior.coords)
-                print(offset_path)
+                # print(offset_path)
 
 
                 plt.plot(*offset_path.T,"-b")
@@ -105,12 +105,13 @@ class Planner:
             line_1 = [(graph.nodes[prev_node]["x"],graph.nodes[prev_node]["y"]), 
                       (graph.nodes[node]["x"],graph.nodes[node]["y"])]
             best_dist = math.inf
-            best_point = None
+            best_point = (0,0)
             for idx in range(len(poly_points) - 1):    
                 line_2 = [tuple(poly_points[idx]), tuple(poly_points[idx+1])]
 
                 # find best intersection point
                 point = intersect_in_range(line_1, line_2)
+
                 if point:
                     x,y = point
                     dist = math.sqrt((line_1[1][0] - x)**2 + (line_1[1][1] - y)**2)
@@ -155,8 +156,6 @@ class Planner:
         new_edges.append((max(graph.nodes) - len(new_end_nodes)- len(poly_points)+2, max(graph.nodes) - len(new_end_nodes)))
 
         graph.add_edges_from(new_edges)
-
-        print(len(new_end_nodes))
    
         # nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=False)
 
@@ -313,57 +312,24 @@ class Planner:
     def generate_gcode(self, params):
         pass
 
-    
-
-def line_equation(point1, point2):
-    """
-    Calculate the slope (m) and y-intercept (c) of the line passing through two points.
-    """
-    x1, y1 = point1
-    x2, y2 = point2
-    
-    # Check if the line is vertical (undefined slope)
-    if x2 - x1 == 0:
-        slope = None
-        intercept = x1  # x-intercept
-    else:
-        slope = (y2 - y1) / (x2 - x1)
-        intercept = y1 - slope * x1
-
-    return slope, intercept
 
 def intersection_point(line1, line2):
     """
     Calculate the intersection point of two lines.
     """
-    m1, c1 = line_equation(line1[0], line1[1])
-    m2, c2 = line_equation(line2[0], line2[1])
-    
-    # Check if lines are parallel
-    if m1 == m2:
-        # Check if both lines are vertical and coincident
-        if m1 is None and m2 is None and c1 == c2:
-            return "Coincident"
-        else:
-            return None  # Lines are parallel, no intersection
-    
-    # Check if line1 is vertical
-    if m1 is None:
-        x = c1
-        y = m2 * x + c2
-        return x, y
-    
-    # Check if line2 is vertical
-    if m2 is None:
-        x = c2
-        y = m1 * x + c1
-        return x, y
-    
-    # Calculate intersection point
-    x = (c2 - c1) / (m1 - m2)
-    y = m1 * x + c1
-    
-    return x, y
+
+    p1 = np.array(line2[0])
+    p2 = np.array(line2[1])
+    p3 = np.array(line1[1])
+
+    vec_1 = p2 - p1
+    vec_2 = p3 - p1
+
+    proj_dist =( vec_2 @ vec_1 ) / (vec_1 @ vec_1)
+    point = proj_dist*vec_1 + p1
+
+    return point[0], point[1]
+
 
 def intersect_in_range(line1, line2):
     x,y = intersection_point(line1, line2)
@@ -374,6 +340,7 @@ def intersect_in_range(line1, line2):
 
     # Check if projected point lies within the bounding box of line2
     if min(x3, x4) <= x <= max(x3, x4) and min(y3, y4) <= y <= max(y3, y4):
+        
         return x,y
     else:
         return None

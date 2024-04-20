@@ -237,7 +237,7 @@ class Slicer:
                 
                 poly_points = polygon.get_xy()
 
-                buffer_poly = shp.Polygon(poly_points).buffer(-2.5*self.params["line_width"])
+                buffer_poly = shp.Polygon(poly_points).buffer(-3*self.params["line_width"])
                 buffer_poly_points = np.array(buffer_poly.exterior.coords.xy).T
                 
                 polygon = Polygon(buffer_poly_points)
