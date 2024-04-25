@@ -14,11 +14,16 @@ import math
 from shapely import LineString, LinearRing
 from shapely import buffer
 import shapely as shp
+from gcodepy.gcode import Gcode
+from tqdm import tqdm
+import sys
 
+sys.setrecursionlimit(10000)
 
 class TreeNode(object):
     def __init__(self, pos: Tuple[float, float] = None, node = None, parent = None, children: List = None, is_boundary = False):
         self.pos = pos
+        self.node = node
         self.parent = parent
         self.children = children if children is not None else []
         self.is_boundary = is_boundary
@@ -48,20 +53,49 @@ class Planner:
         """
         For all layers, generate spanning tree, then path, then generate gcode
         """
+
+        pbar = tqdm(total=self.n_layers,desc = "Planning Layer Path")
+        layer_paths = []
         for layer_idx in range(self.n_layers):
+            # layer_idx = 140
+            region_paths = []
+
+            
+            
             for region_idx, graph in enumerate(self.layer_graphs[layer_idx]):
                 polygon = self.layer_polygons[layer_idx][region_idx]
-                tree =self.generate_spanning_tree(polygon, graph)
-                point_path = self.generate_path(tree)
 
-                line = LineString(point_path)
-                offset_path = np.array(line.buffer(.5*self.params["line_width"]).exterior.coords)
-                # print(offset_path)
-
-
-                plt.plot(*offset_path.T,"-b")
-                plt.axis('equal')
                 
+                
+
+
+                tree =self.generate_spanning_tree(polygon, graph)
+
+                # print(tree)
+                
+                
+                # print(tree)
+                if tree:
+                    for root in tree:
+                        point_path = self.generate_path(root)
+                        
+                        line = LineString(point_path)
+                        offset_path = np.array(line.buffer(.5*self.params["line_width"]).exterior.coords)
+                        # print(offset_path)
+                        region_paths.append(offset_path)
+
+                # for offset_path in region_paths:
+                #     plt.plot(*offset_path.T,"-b")
+                # plt.axis('equal')
+            layer_paths.append(region_paths)
+            # return
+            pbar.update(1)
+            
+
+        return layer_paths
+
+    def generate_gcode(self, params):
+        pass           
 
     def generate_spanning_tree(self, polygon: Polygon, graph: nx.Graph) -> TreeNode:
         """
@@ -70,210 +104,411 @@ class Planner:
 
         # get buffer polygon that is 1x width smaller than original polygon
         poly_points = polygon.get_xy()
+        # plt.plot(*poly_points.T)
+        # nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=False)
+
+        
 
         buffer_poly = shp.Polygon(poly_points).buffer(-self.params["line_width"])
-        buffer_poly_points = np.array(buffer_poly.exterior.coords.xy).T
+
+        poly_exteriors = []
+        if type(buffer_poly) == shp.MultiPolygon:
+            for sub_poly_idx in range(len(buffer_poly.geoms)):
+                poly_exteriors.append(Polygon(np.array(buffer_poly.geoms[sub_poly_idx].exterior.coords.xy).T))
+        else:
+            poly_exteriors.append(Polygon(np.array(buffer_poly.exterior.coords.xy).T))
+
+        # buffer_poly_points = np.array(buffer_poly.exterior.coords.xy).T
         
-        polygon = Polygon(buffer_poly_points)
-        poly_points = polygon.get_xy()
+        # polygon = Polygon(buffer_poly_points)
+        # poly_points = polygon.get_xy()
 
-        # plt.plot(*poly_points.T)
+        poly_points_array = [polygon.get_xy() for polygon in poly_exteriors]
 
+        for poly_points in poly_points_array:
+            if not np.any(poly_points):
+                return None
+            
+        
         
         # get list of connected graphs
         connected_components = list(nx.connected_components(graph))
-
-        
+        # print(len(connected_components))
 
         # for each subgraph, find an end piece
         end_nodes = []
         
-        for sub_graph in connected_components:
-            for node in sub_graph:
-                if graph.degree(node) == 1:
-                    end_nodes.append(node)
-                    break
+
+
+
+        # print(end_nodes)
 
         # for each end node, add an edge that connects them to the outside
         new_end_nodes = []
-        insert_idxs = [(0,0) for _ in end_nodes]
+        insert_idxs = [(0,0) for _ in connected_components]
 
-        for node_idx, node in enumerate(end_nodes):
+        def find_connection(region_idx, node):
+            # print("finding connection for node ", node)
             prev_node = next(graph.neighbors(node))
             
             # get line that extends outward
             line_1 = [(graph.nodes[prev_node]["x"],graph.nodes[prev_node]["y"]), 
                       (graph.nodes[node]["x"],graph.nodes[node]["y"])]
             best_dist = math.inf
-            best_point = (0,0)
-            for idx in range(len(poly_points) - 1):    
-                line_2 = [tuple(poly_points[idx]), tuple(poly_points[idx+1])]
+            best_point = (None,None)
+            idx_total = 0
+            for poly_points in poly_points_array:
+                # print("new range")
+                for idx in range(len(poly_points) - 1):    
+                    line_2 = [tuple(poly_points[idx]), tuple(poly_points[idx+1])]
+                    # print(line_2)
+                    # print(line_1)
 
-                # find best intersection point
-                point = intersect_in_range(line_1, line_2)
+                    # find best intersection point
+                    point = intersect_in_range(line_1, line_2)
+                    # print(point)
+                    # print(line_2)
+                    
+                    # print(point)
+                    if point:
+                        x,y = point
+                        dist = math.sqrt((line_1[1][0] - x)**2 + (line_1[1][1] - y)**2)
+                        if dist < best_dist:
+                            best_point = point
+                            best_dist = dist
+                            if idx_total + idx+1 == len(poly_points) - 1:
+                                insert_idxs[region_idx] = (idx+idx_total, idx_total)
+                            else:
+                                insert_idxs[region_idx] = (idx+idx_total, idx_total + idx+1)
+                idx_total += idx
+            if abs(best_dist - 2*self.params["line_width"]) > .01:
+                return (None, None)
+            # print(best_dist)
+            return best_point
+            
+        for region_idx, sub_graph in enumerate(connected_components):
+            for node in sub_graph:
+                if graph.degree(node) == 1:
+                    # print("trying to find connection for node ", node)
+                    connection_pt = find_connection(region_idx, node)
+                    # print(connection_pt)
+                    if not connection_pt[0] is None:
+                        # print(connection_pt)
+                        end_nodes.append(node)
+                        new_end_nodes.append(connection_pt)
+                        break
+    
+        # for node_idx, node in enumerate(end_nodes):
+        #     prev_node = next(graph.neighbors(node))
+            
+        #     # get line that extends outward
+        #     line_1 = [(graph.nodes[prev_node]["x"],graph.nodes[prev_node]["y"]), 
+        #               (graph.nodes[node]["x"],graph.nodes[node]["y"])]
+        #     best_dist = math.inf
+        #     best_point = (None,None)
+        #     idx_total = 0
+        #     for poly_points in poly_points_array:
+        #         for idx in range(len(poly_points) - 1):    
+        #             line_2 = [tuple(poly_points[idx]), tuple(poly_points[idx+1])]
+        #             # print(line_2)
 
-                if point:
-                    x,y = point
-                    dist = math.sqrt((line_1[1][0] - x)**2 + (line_1[1][1] - y)**2)
-                    if dist < best_dist:
-                        best_point = point
-                        best_dist = dist
-                        insert_idxs[node_idx] = (idx, idx+1)
+        #             # find best intersection point
+        #             point = intersect_in_range(line_1, line_2)
+                    
+        #             # print(point)
+        #             if point:
+        #                 x,y = point
+        #                 dist = math.sqrt((line_1[1][0] - x)**2 + (line_1[1][1] - y)**2)
+        #                 if dist < best_dist:
+        #                     best_point = point
+        #                     best_dist = dist
+        #                     insert_idxs[node_idx] = (idx+idx_total, idx_total + idx+1)
+        #         idx_total += idx
 
-            new_end_nodes.append(best_point)
+            # new_end_nodes.append(best_point)
+        # print(new_end_nodes)
 
+        if connected_components:
+            graph_n_nodes = max(graph.nodes)
+        else:
+            graph_n_nodes = 0
 
-        graph_n_nodes = max(graph.nodes)
-
+        # print(insert_idxs)
 
         # add outer edge to graph with new points
+        
+        # offset = max(graph.nodes) + 1
+
+
+        
+        idx = 0
         new_points = []
-        for idx in range(len(poly_points)-1):
-            x1 = poly_points[idx][0]
-            y1 = poly_points[idx][1]
+        for poly_points in poly_points_array:
+            
 
-            new_points.append((idx + graph_n_nodes + 1,{'x':x1, 'y':y1}))
-        
-        for new_end_node_idx, new_end_node in enumerate(new_end_nodes):
-            x1, y1 = new_end_node
-            new_points.append((idx + graph_n_nodes + new_end_node_idx + 2, {"x":x1, "y":y1}))
+            # print(poly_points)
+            
+            for p_idx in range(len(poly_points)-1):
+                x1 = poly_points[p_idx][0]
+                y1 = poly_points[p_idx][1]
 
-        graph.add_nodes_from(new_points)
+                new_points.append((idx + graph_n_nodes + 1,{'x':x1, 'y':y1}))
+                # print(idx + graph_n_nodes + 1)
 
-        
+                idx += 1
 
-        new_edges = []
-        for vert_idx in range(len(poly_points) - 2):
-            offset = graph_n_nodes +1
-            if (vert_idx , vert_idx+1) not in insert_idxs:
-                new_edges.append((vert_idx+offset, vert_idx+offset+1))
-            else:
-                sub_graph_idx = insert_idxs.index((vert_idx, vert_idx+1))
-                new_edges.append((vert_idx + offset, graph_n_nodes + idx + sub_graph_idx + 2))
-                new_edges.append((vert_idx + offset + 1, graph_n_nodes + idx + sub_graph_idx + 2))
-                new_edges.append((end_nodes[sub_graph_idx],graph_n_nodes + idx + sub_graph_idx + 2))
-
-        new_edges.append((max(graph.nodes) - len(new_end_nodes)- len(poly_points)+2, max(graph.nodes) - len(new_end_nodes)))
-
-        graph.add_edges_from(new_edges)
-   
-        # nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=False)
 
             
-        # find a starting point and remove close points        
+        for new_end_node_idx, new_end_node in enumerate(new_end_nodes):
+            x1, y1 = new_end_node
+            new_points.append((idx + graph_n_nodes + new_end_node_idx + 1, {"x":x1, "y":y1}))
+            
+            # print(idx + graph_n_nodes + new_end_node_idx + 1)
 
+        # print(new_points)
+        graph.add_nodes_from(new_points)
+        
+        outside_pts = []
+
+            # print(idx + graph_n_nodes + new_end_node_idx + 2)
+        # print(new_points)
+        # print(insert_idxs)
+        # print(len(poly_points))
+        # print(end_nodes)
+        # print(new_end_nodes)
+
+        # nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=True)
+        # plt.axis("equal")
+
+        # return []
+
+        new_edges = []
+
+        
+
+
+        vert_idx = 0
+        sub_offset = 0
+        for poly_points in poly_points_array:
+            regional_outside_pts = []
+            for edge_idx in range(len(poly_points) - 2):   
+                # print((vert_idx , vert_idx+1))  
+                regional_outside_pts.append(vert_idx+graph_n_nodes+1+sub_offset)
+                regional_outside_pts.append(vert_idx+graph_n_nodes+2+sub_offset)           
+                if (vert_idx , vert_idx+1) not in insert_idxs and (vert_idx + 1, vert_idx) not in insert_idxs:
+
+                    # print((vert_idx+graph_n_nodes+1, vert_idx+graph_n_nodes+2))
+                    new_edges.append((vert_idx+graph_n_nodes+1+sub_offset, vert_idx+graph_n_nodes+2+sub_offset))
+                    # print((vert_idx+offset, vert_idx+offset+1))
+                else:
+                    # continue
+                    # print("hi")
+                    sub_graph_idx = insert_idxs.index((vert_idx, vert_idx+1))
+                    new_edges.append((vert_idx+graph_n_nodes+1+sub_offset, graph_n_nodes + idx + sub_graph_idx + 1))
+                    new_edges.append((vert_idx+graph_n_nodes+2+sub_offset, graph_n_nodes + idx + sub_graph_idx + 1))
+                    new_edges.append((end_nodes[sub_graph_idx],graph_n_nodes + idx + sub_graph_idx + 1))
+                    regional_outside_pts.append(graph_n_nodes + idx + sub_graph_idx + 1)
+                vert_idx +=1
+            last_edge = ( vert_idx, vert_idx + 2 - len(poly_points))
+            if last_edge not in insert_idxs and (last_edge[1],last_edge[0]) not in insert_idxs:
+                new_edges.append((vert_idx+graph_n_nodes+1+sub_offset, vert_idx+graph_n_nodes+3+sub_offset - len(poly_points)))
+            else:
+                sub_graph_idx = insert_idxs.index(last_edge)
+                new_edges.append((vert_idx+graph_n_nodes+1+sub_offset, graph_n_nodes + idx + sub_graph_idx + 1))
+                new_edges.append((graph_n_nodes + idx + sub_graph_idx + 1, vert_idx+graph_n_nodes+3+sub_offset - len(poly_points)))
+                new_edges.append((graph_n_nodes + idx + sub_graph_idx + 1, end_nodes[sub_graph_idx]))
+
+                # print(vert_idx+graph_n_nodes+1+sub_offset)
+                # print( vert_idx+graph_n_nodes+3+sub_offset - len(poly_points))
+                # print(end_nodes[sub_graph_idx])
+                # print(graph_n_nodes + idx + sub_graph_idx + 1)
+            # print((vert_idx+graph_n_nodes+1+sub_offset, vert_idx+graph_n_nodes+3+sub_offset - len(poly_points)))
+            sub_offset += 1
+            outside_pts.append(regional_outside_pts)
+
+
+            # new_edges.append((max(graph.nodes) - len(new_end_nodes)- len(poly_points)+2, max(graph.nodes) - len(new_end_nodes)))
+
+        graph.add_edges_from(new_edges)
+        # print(new_edges)
+   
+#         nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=True)
+#         plt.axis("equal")
+# #           
+        
+        # return []
+        # find a starting point and remove close points
+
+       
+        used_pts = []
+        # print(outside_pts)        
+
+        # return []
+    
         def is_valid_enter_pt(start_idx):
             x_1 = graph.nodes[start_idx]["x"]
             y_1 = graph.nodes[start_idx]["y"]
             for point in new_end_nodes:
                 x_2,y_2 = point
-                if math.sqrt((x_1 - x_2)**2 + (y_1 - y_2)**2) < self.params["line_width"]:
+                if math.sqrt((x_1 - x_2)**2 + (y_1 - y_2)**2) < 2*self.params["line_width"]:
+                    return False
+                if point in graph.neighbors(start_idx):
                     return False
             return True
+        
+        def get_valid_start_pt(outside_pts):
+            for idx in outside_pts:
+                # print(idx)
+                # print(graph.degree(idx))
+                if graph.degree(idx) == 3:
+                    return idx
+            # print(graph.degree(idx))
+            return idx
+        
+        potential_start_idxs = []
 
-        potential_start_idx = max(graph.nodes) - len(new_end_nodes)
-        while not is_valid_enter_pt(potential_start_idx):
-            potential_start_idx -= 1
-
-        # delete all close points to enter point
-        del_node = potential_start_idx - 1
-        cur_node = potential_start_idx
-        while True:
-            x_1 = graph.nodes[potential_start_idx]["x"]
-            y_1 = graph.nodes[potential_start_idx]["y"]
-            x_2 = graph.nodes[del_node]["x"]
-            y_2 = graph.nodes[del_node]["y"]
+        potential_start_idx = graph_n_nodes
+        for region_idx, poly_points in enumerate(poly_points_array):
+            # print(poly_points)
+            # potential_start_idx += len(poly_points) -1
+            # while not is_valid_enter_pt(potential_start_idx):
+            #     potential_start_idx -= 1
+            potential_start_idx = get_valid_start_pt(outside_pts[region_idx])
             
-
-            # Delete edges
-            graph.remove_edges_from([(del_node, cur_node)])
-            dist = math.sqrt((x_1 - x_2)**2 + (y_1 - y_2)**2)
-            if dist > 2*self.params["line_width"]:
-
-                vec_a = np.array([x_1,y_1]) - np.array([x_2, y_2])
-                vec_a = vec_a/np.linalg.norm(vec_a) * (dist - 2*self.params["line_width"])
-                new_point = (x_2 + vec_a[0], y_2 + vec_a[1])
+            # delete all close points to enter point
+            # del_node = potential_start_idx - 1
+            # print(list(graph.neighbors(potential_start_idx)))
+            del_node = next(graph.neighbors(potential_start_idx))
+            
+            while del_node not in outside_pts[region_idx]:
+                del_node = next(graph.neighbors(potential_start_idx))
+            
+            cur_node = potential_start_idx
+            used_pts.append(cur_node)
+            
+            while True:
                 
-                graph.add_nodes_from([(max(graph.nodes) + 1, {"x": new_point[0], "y":new_point[1]})])
-                graph.add_edges_from([(del_node, max(graph.nodes))])
+                x_1 = graph.nodes[potential_start_idx]["x"]
+                y_1 = graph.nodes[potential_start_idx]["y"]
+                x_2 = graph.nodes[del_node]["x"]
+                y_2 = graph.nodes[del_node]["y"]
                 
 
-                break
-            del_node -= 1
-            cur_node -= 1
+                # Delete edges
+                graph.remove_edges_from([(del_node, cur_node)])
+                # print((del_node, cur_node))
 
-        graph.remove_nodes_from(list(nx.isolates(graph)))
+                # print((del_node, cur_node))
+                dist = math.sqrt((x_1 - x_2)**2 + (y_1 - y_2)**2)
+                if dist > 2*self.params["line_width"]:
+                    
+                    vec_a = np.array([x_1,y_1]) - np.array([x_2, y_2])
+                    vec_a = vec_a/np.linalg.norm(vec_a) * (dist - 2*self.params["line_width"])
+                    new_point = (x_2 + vec_a[0], y_2 + vec_a[1])
+                    
+                    graph.add_nodes_from([(max(graph.nodes) + 1, {"x": new_point[0], "y":new_point[1]})])
+                    graph.add_edges_from([(del_node, max(graph.nodes))])
+
+                    # print(x_1,y_1)
+                    # print("happening", max(graph.nodes))
+                    
+
+                    break
+                cur_node = del_node
+                del_node = next(graph.neighbors(cur_node))
+                while del_node not in outside_pts[region_idx] or del_node in used_pts:
+                    del_node = next(graph.neighbors(cur_node))
+
+            potential_start_idxs.append(potential_start_idx)
+            # print(potential_start_idxs)
+            graph.remove_nodes_from(list(nx.isolates(graph)))
         # work through lattice and create a spanning tree vis DPS
 
-        visited = set()  # Set to keep track of visited nodes
-        tree_edges = []  # List to store edges of the spanning tree
+        
+        # print(potential_start_idxs)
+        # nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=True)
+        # return []
+        
+        # print(len(list(nx.connected_components(graph))))
+        roots = []
+        for start_idx in potential_start_idxs:
+
+            visited = set()  # Set to keep track of visited nodes
+            tree_edges = []  # List to store edges of the spanning tree
 
 
-        def dfs(node, parent):
-            visited.add(node)
-            for neighbor in graph.neighbors(node):
-                if neighbor != parent:
-                    if neighbor not in visited:
-                        tree_edges.append((node, neighbor))
-                        dfs(neighbor, node)
-                    else:
-                        # Ensure each node is visited at most twice
-                        if (node, neighbor) not in tree_edges and (neighbor, node) not in tree_edges:
+            def dfs(node, parent):
+                visited.add(node)
+                # print(node)
+                for neighbor in graph.neighbors(node):
+                    
+                    if neighbor != parent:
+                        if neighbor not in visited:
                             tree_edges.append((node, neighbor))
+                            dfs(neighbor, node)
+                        else:
+                            # Ensure each node is visited at most twice
+                            if (node, neighbor) not in tree_edges and (neighbor, node) not in tree_edges:
+                                tree_edges.append((node, neighbor))
+
+            # print("starting at ",start_idx)
+            dfs(start_idx, None)
+            
+            # # create a dictionary to hold the nodes of the lattice
+            unique_nodes = {}
+
+            # # get unique nodes and insert into dictionary
+            for edge in tree_edges:
+                node_1, node_2 = edge
+                if node_1 not in unique_nodes.keys():
+                    unique_nodes[node_1] = TreeNode(node=node_1)
+                if node_2 not in unique_nodes.keys():
+                    unique_nodes[node_2] = TreeNode(node=node_2)
+            
+
+            # using tree_edge list, establish connectivity between nodes
+            for edge in tree_edges:
+                parent_idx, child_idx = edge
+                parent = unique_nodes[parent_idx]
+                child = unique_nodes[child_idx]
+
+                parent_pos = (graph.nodes[parent_idx]['x'],graph.nodes[parent_idx]['y'])
+                offset_table = {"triangle":2.31, "square":2, "hexagon":2}
+                # if the node has already been used, create new one at same spot, but now leaf
+                if child.parent:
+                    child = TreeNode()
+                    child_pos = (graph.nodes[child_idx]['x'],graph.nodes[child_idx]['y'])
+                    x_1, y_1 = parent_pos
+                    x_2, y_2 = child_pos
+                    vec_a = np.array([x_2, y_2]) - np.array([x_1,y_1])
+                    length = np.linalg.norm(vec_a)
+                    vec_a = vec_a/length * (length - offset_table[self.params["infill"]]*self.params["line_width"])
+                    child_pos = (x_1 + vec_a[0], y_1 + vec_a[1])
+
+                else:
+                    child_pos = (graph.nodes[child_idx]['x'],graph.nodes[child_idx]['y'])
 
 
-        dfs(potential_start_idx, None)
+                
+                parent.pos = parent_pos
+                child.pos = child_pos
 
-        # # create a dictionary to hold the nodes of the lattice
-        unique_nodes = {}
-
-        # # get unique nodes and insert into dictionary
-        for edge in tree_edges:
-            node_1, node_2 = edge
-            if node_1 not in unique_nodes.keys():
-                unique_nodes[node_1] = TreeNode()
-            if node_2 not in unique_nodes.keys():
-                unique_nodes[node_2] = TreeNode()
-        
-        
-        # using tree_edge list, establish connectivity between nodes
-        for edge in tree_edges:
-            parent_idx, child_idx = edge
-            parent = unique_nodes[parent_idx]
-            child = unique_nodes[child_idx]
-
-            parent_pos = (graph.nodes[parent_idx]['x'],graph.nodes[parent_idx]['y'])
-            offset_table = {"triangle":2.31, "square":2, "hexagon":2}
-            # if the node has already been used, create new one at same spot, but now leaf
-            if child.parent:
-                child = TreeNode()
-                child_pos = (graph.nodes[child_idx]['x'],graph.nodes[child_idx]['y'])
-                x_1, y_1 = parent_pos
-                x_2, y_2 = child_pos
-                vec_a = np.array([x_2, y_2]) - np.array([x_1,y_1])
-                length = np.linalg.norm(vec_a)
-                vec_a = vec_a/length * (length - offset_table[self.params["infill"]]*self.params["line_width"])
-                child_pos = (x_1 + vec_a[0], y_1 + vec_a[1])
-
-            else:
-                child_pos = (graph.nodes[child_idx]['x'],graph.nodes[child_idx]['y'])
-
+                parent.children.append(child)
+                child.parent = parent     
+            # print(potential_start_idx)
+            root = unique_nodes[start_idx]
+            # print(root)
 
             
-            parent.pos = parent_pos
-            child.pos = child_pos
-
-            parent.children.append(child)
-            child.parent = parent     
-
-        root = unique_nodes[potential_start_idx]
         
-        self.plot_tree(root)   
-
-        return root
+            # self.plot_tree(root)  
+            roots.append(root)
+        
+        return roots
 
     
     def plot_tree(self, node: TreeNode) -> None:
+        # print(node.node)
         for child in node.children:
             plt.plot([node.pos[0], child.pos[0]],[node.pos[1],child.pos[1]],"-k")
             self.plot_tree(child)
@@ -283,19 +518,22 @@ class Planner:
         points = []
 
         def dfs(node) -> None:
+            
             points.append(node.pos)
+            # print(points)
 
             # calc relative angles to next point
             rel_angles = []
             if len(node.children) > 1:
-                for child in node.children:
-                    v_0 = np.array(node.pos).reshape((2, 1))
-                    v_1 = np.array(node.parent.pos).reshape((2, 1))
-                    v_2 = np.array(child.pos).reshape((2, 1))
-                    rel_angles.append(angle(v_0,v_1,v_2)) 
+                if node.parent:
+                    for child in node.children:
+                        v_0 = np.array(node.pos).reshape((2, 1))
+                        v_1 = np.array(node.parent.pos).reshape((2, 1))
+                        v_2 = np.array(child.pos).reshape((2, 1))
+                        rel_angles.append(angle(v_0,v_1,v_2)) 
 
-                # reorder children
-                node.children = [x for _, x in sorted(zip(rel_angles, node.children), key=lambda pair: pair[0])]
+                    # reorder children
+                    node.children = [x for _, x in sorted(zip(rel_angles, node.children), key=lambda pair: pair[0])]
 
             for child in node.children:
                 dfs(child)
@@ -303,14 +541,12 @@ class Planner:
             if node.parent:
                 points.append(node.parent.pos)
 
-
         dfs(tree)
         
         return points
 
 
-    def generate_gcode(self, params):
-        pass
+
 
 
 def intersection_point(line1, line2):
@@ -337,6 +573,8 @@ def intersect_in_range(line1, line2):
     # Check if projected point lies on line2
     x3, y3 = line2[0]
     x4, y4 = line2[1]
+
+    # print(x,y)
 
     # Check if projected point lies within the bounding box of line2
     if min(x3, x4) <= x <= max(x3, x4) and min(y3, y4) <= y <= max(y3, y4):

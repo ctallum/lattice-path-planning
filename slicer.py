@@ -14,6 +14,8 @@ import networkx as nx
 from shapely.geometry import LineString
 import shapely as shp
 from collections import defaultdict
+import pickle
+import os
 
 
 from planner import Planner
@@ -35,25 +37,58 @@ class Slicer:
         """
         Take input model path and slice according to pre-set parameters
         """
-        self.load_part(path)
-        self.lattice = self.generate_lattice()
+        # self.load_part(path)
+        # self.lattice = self.generate_lattice()
 
         # First layer generation
-        self.layer_edges = self.create_raw_slices()
-
-        self.n_layers = 1 # for debug, to keep runtime down
+        # self.layer_edges = self.create_raw_slices()
 
         # layer cleanup to create graphs
-        self.layer_polygons = self.slice_to_polly(self.layer_edges)
-        self.layer_graphs = self.generate_layer_graphs(self.lattice, self.layer_polygons)
+        if os.path.isfile("poly.pckl"):
+            f = open('poly.pckl', 'rb')
+            self.layer_polygons = pickle.load(f)
+            f.close()
+        else:
+            self.layer_polygons = self.slice_to_polly(self.layer_edges)
+            f = open('poly.pckl', 'wb')
+            pickle.dump(self.layer_polygons, f)
+            f.close()
 
+        if os.path.isfile("graph.pckl"):
+            f = open('graph.pckl', 'rb')
+            self.layer_graphs = pickle.load(f)
+            f.close()
+        else:
+            self.layer_graphs = self.generate_layer_graphs(self.lattice, self.layer_polygons)
+            f = open('graph.pckl', 'wb')
+            pickle.dump(self.layer_graphs, f)
+            f.close()
 
-        # self.plot_layer_graph(0)
-        # self.plot_layer_edge(0)
-
+        # self.n_layers = 1
         self.planner = Planner(self.params, self.layer_polygons, self.layer_graphs)
 
-        self.planner.plan()
+        if os.path.isfile("path.pckl"):
+            f = open('path.pckl', 'rb')
+            self.layer_paths = pickle.load(f)
+            f.close()
+        else:
+            self.layer_paths = self.planner.plan()            
+            f = open('path.pckl', 'wb')
+            pickle.dump(self.layer_paths, f)
+            f.close()
+
+        # test_idx = 360
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+        for layer_idx, layer_data in enumerate(self.layer_paths[0:300]):
+            for pts in layer_data:
+                # print(layer_idx * self.params["layer_height"])
+                ax.plot(*pts.T, layer_idx*self.params["layer_height"])
+        # for offset_path in self.layer_paths[test_idx]:
+        #     plt.plot(*offset_path.T,"-b")
+        #     plt.axis('equal')
+
+
 
         
     def load_part(self, path: str) -> None:
@@ -101,51 +136,80 @@ class Slicer:
 
         slices = []
         for layer in range(self.n_layers):
+            # la/yer = 33
             re_ordered_edge = self.reorder_edges(layer_edges[layer])
             polygons = []
             for ring in re_ordered_edge:
-                polygons.append(Polygon(ring))
+                polygons.append(Polygon(ring,  edgecolor='b', facecolor='none'))
+                # print(ring)
+
             slices.append(polygons)
             pbar.update(1)
 
+            
+
+
+            # self.plot_layer_edge(33)
+
+            # print(slices)
+            
         return slices
+    
 
 
-    def reorder_edges(self,coordinates) -> List[np.ndarray]:
+
+    def reorder_edges(self, coordinates) -> List[np.ndarray]:
         """
-        Iterate through all set of edges and re-order them. Also split into separate rings if needed
+        Iterate through all sets of edges and reorder them. Also split into separate rings if needed.
         """
-        coordinates = np.around(coordinates,4).tolist()
-        reordered_coords = []
-        while coordinates:
-            current_edge = coordinates[0]
-            coordinates.pop(0)
-            reordered_region = [current_edge]
-            while True:
-                next_edge_index = None
-                for i, edge in enumerate(coordinates):
-                    if edge[0] == current_edge[1]:
-                        next_edge_index = i
-                        reordered_region.append(edge)
-                        current_edge = edge
-                        coordinates.pop(i)
-                        break
-                    if edge[1] == current_edge[1]:
-                        next_edge_index = i
-                        reordered_region.append(edge[::-1])
-                        current_edge = edge[::-1]
-                        coordinates.pop(i)
-                        break
-                if next_edge_index is None:
-                    break
-            reordered_coords.append(reordered_region)
-            reordered_coords = [np.array(a) for a in reordered_coords]
-            edge_rings = []
-            for ring in reordered_coords:
-                edge_rings.append(ring[:,0,:])
-
-        return edge_rings
+        used_points = []
         
+        coordinates = np.around(coordinates,4).tolist()
+        # coordinates = coordinates.tolist()
+        reordered_coords = []
+        
+        while coordinates:
+            current_edge = coordinates.pop(0)
+
+            if current_edge[0] in used_points or current_edge[1] in used_points:
+                break
+                       
+            reordered_region = [current_edge[0],current_edge[1]]
+
+            while True:
+                next_point_found = False
+
+                for i, edge in enumerate(coordinates):
+                    if edge[0] == reordered_region[-1]:
+                        reordered_region.append(edge[1])
+                        used_points.append(edge[1])
+                        coordinates.pop(i)
+                        next_point_found = True
+                        break
+                    if edge[1] == reordered_region[-1]:
+                        reordered_region.append(edge[0])
+                        used_points.append(edge[0])
+                        coordinates.pop(i)
+                        next_point_found = True
+                        break
+                
+                if not next_point_found:
+                    break
+            
+                # coordinates.pop(next_edge_index)
+            
+            # if reordered_region[0] != reordered_region[-1]:
+            #     continue
+
+            reordered_coords.append(np.array(reordered_region))
+            
+        
+        # edge_rings = [ring[:, 0, :] for ring in reordered_coords]
+
+
+        
+        return reordered_coords
+            
     def plot_layer_edge(self, layer: int) -> None:
         """
         Plot a given layer_edge
@@ -206,6 +270,7 @@ class Slicer:
     
         # update bar
         pbar = tqdm(total=self.n_layers,desc = "Converting Layer to Graph")
+ 
 
         layer_graphs = []
         for layer_idx in range(self.n_layers):
@@ -230,46 +295,62 @@ class Slicer:
 
                 lat_edges = np.unique(np.array(lat_edges),axis=0).tolist()
 
-                # get all bounding polygon points
-
-
-                # 
+  
                 
                 poly_points = polygon.get_xy()
+
+                # plt.plot(*poly_points.T)
+
+                # buff_polygons = []
+
 
                 buffer_poly = shp.Polygon(poly_points).buffer(-3*self.params["line_width"])
-                buffer_poly_points = np.array(buffer_poly.exterior.coords.xy).T
-                
-                polygon = Polygon(buffer_poly_points)
-                poly_points = polygon.get_xy()
 
+                poly_exteriors = []
+                if type(buffer_poly) == shp.MultiPolygon:
+                    for sub_poly_idx in range(len(buffer_poly.geoms)):
+                        poly_exteriors.append(Polygon(np.array(buffer_poly.geoms[sub_poly_idx].exterior.coords.xy).T))
+                else:
+                    poly_exteriors.append(Polygon(np.array(buffer_poly.exterior.coords.xy).T))
+
+
+                # for sub_poly in buff_polygons:
+
+                
+                
+
+
+                # buffer_poly_points = np.array(buffer_poly.exterior.coords.xy).T
+                
+                # polygon = Polygon(buffer_poly_points)
+                poly_points_array = [polygon.get_xy() for polygon in poly_exteriors]
 
                 
                 # iterate through all polygon edges and lattice edges to find intersecting sets
                 problem_edges = defaultdict(list)
 
                 # calc ahead of time all 
-
-                for poly_point_idx in range(len(poly_points) - 1):
-                    A = poly_points[poly_point_idx ,:]
-                    B = poly_points[poly_point_idx + 1,:]
-                    
-                    # iterate through all edges in the lattice
-                    for edge_idx, edge in enumerate(lat_edges):
-                        C = lat_points[edge[0]]
-                        D = lat_points[edge[1]]
+                for poly_points in poly_points_array:
+                    for poly_point_idx in range(len(poly_points) - 1):
+                        A = poly_points[poly_point_idx ,:]
+                        B = poly_points[poly_point_idx + 1,:]
                         
-                        # see if polygon line AB intersects with lattice line CD
-                        if intersect(A,B,C,D):
+                        # iterate through all edges in the lattice
+                        for edge_idx, edge in enumerate(lat_edges):
+                            C = lat_points[edge[0]]
+                            D = lat_points[edge[1]]
+                            
+                            # see if polygon line AB intersects with lattice line CD
+                            if intersect(A,B,C,D):
 
-                            # calc where they intersected
-                            line1 = LineString([A, B])
-                            line2 = LineString([C, D])
-                            int_pt = line1.intersection(line2)
-                            int_coord = (int_pt.x, int_pt.y)
+                                # calc where they intersected
+                                line1 = LineString([A, B])
+                                line2 = LineString([C, D])
+                                int_pt = line1.intersection(line2)
+                                int_coord = (int_pt.x, int_pt.y)
 
-                            # label this edge as problematic
-                            problem_edges[edge_idx].append(int_coord)
+                                # label this edge as problematic
+                                problem_edges[edge_idx].append(int_coord)
 
                 # define a new set of points and lines. These will replace the lines that intersect. They are the trimmed lines
 
@@ -299,8 +380,10 @@ class Slicer:
                         mid_points.append([(start[0] + end[0])/2, (start[1] + end[1])/2])
 
                     # get the line segments that are valid
-                    valid_mids =  polygon.get_path().contains_points(np.array(mid_points))
-
+                    valid_mids = np.full((len(mid_points)), False)
+                    for polygon in poly_exteriors:
+                        valid_mids = valid_mids + polygon.get_path().contains_points(np.array(mid_points))
+                    
                     # add the valid section of the problem line to the new points/new edges
                     for idx in range(len(ordered_list) -1):
                         start = ordered_list[idx]
@@ -329,7 +412,9 @@ class Slicer:
                 final_edges = []
 
                 # find all edges that connect to outside points
-                inside_points = polygon.get_path().contains_points(np.array(lat_points))
+                inside_points = np.full((len(lat_points)), False)
+                for polygon in poly_exteriors:
+                    inside_points = inside_points + polygon.get_path().contains_points(np.array(lat_points))
 
                 bad_points_idx = [idx for idx,val in enumerate(inside_points) if not val and lat_points[idx] not in critical_points]
                 
@@ -360,7 +445,7 @@ class Slicer:
                 # add graph to collection of graphs per layer
                 G = G.to_undirected()
                 graphs.append(G)
-            
+                
             layer_graphs.append(graphs)
             
             pbar.update(1)
