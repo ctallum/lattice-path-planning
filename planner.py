@@ -56,6 +56,7 @@ class Planner:
 
         pbar = tqdm(total=self.n_layers,desc = "Planning Layer Path")
         layer_paths = []
+        layer_full_graphs = []
         for layer_idx in range(self.n_layers):
             # layer_idx = 140
             region_paths = []
@@ -69,7 +70,7 @@ class Planner:
                 
 
 
-                tree =self.generate_spanning_tree(polygon, graph)
+                tree, complete_graph =self.generate_spanning_tree(polygon, graph)
 
                 # print(tree)
                 
@@ -88,11 +89,12 @@ class Planner:
                 #     plt.plot(*offset_path.T,"-b")
                 # plt.axis('equal')
             layer_paths.append(region_paths)
+            layer_full_graphs.append(complete_graph)
             # return
             pbar.update(1)
             
 
-        return layer_paths
+        return layer_paths, layer_full_graphs
 
     def generate_gcode(self, params):
         pass           
@@ -127,7 +129,7 @@ class Planner:
 
         for poly_points in poly_points_array:
             if not np.any(poly_points):
-                return None
+                return None, None
             
         
         
@@ -504,7 +506,7 @@ class Planner:
             # self.plot_tree(root)  
             roots.append(root)
         
-        return roots
+        return roots, graph
 
     
     def plot_tree(self, node: TreeNode) -> None:

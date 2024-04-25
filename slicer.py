@@ -72,15 +72,18 @@ class Slicer:
             self.layer_paths = pickle.load(f)
             f.close()
         else:
-            self.layer_paths = self.planner.plan()            
+            self.layer_paths, self.layer_full_graphs = self.planner.plan()            
             f = open('path.pckl', 'wb')
             pickle.dump(self.layer_paths, f)
+            f.close()
+            f = open('full_graphs.pckl','wb')
+            pickle.dump(self.layer_full_graphs, f)
             f.close()
 
         # test_idx = 360
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
-        for layer_idx, layer_data in enumerate(self.layer_paths[0:300]):
+        for layer_idx, layer_data in enumerate(self.layer_paths):
             for pts in layer_data:
                 # print(layer_idx * self.params["layer_height"])
                 ax.plot(*pts.T, layer_idx*self.params["layer_height"])
