@@ -16,7 +16,7 @@ import shapely as shp
 from collections import defaultdict
 import pickle
 import os
-
+import math
 
 from planner import Planner
 
@@ -37,11 +37,12 @@ class Slicer:
         """
         Take input model path and slice according to pre-set parameters
         """
-        # self.load_part(path)
-        # self.lattice = self.generate_lattice()
+        self.load_part(path)
+        self.lattice = self.generate_lattice()
 
         # First layer generation
-        # self.layer_edges = self.create_raw_slices()
+        self.layer_edges = self.create_raw_slices()
+        
 
         # layer cleanup to create graphs
         if os.path.isfile("poly.pckl"):
@@ -54,6 +55,10 @@ class Slicer:
             pickle.dump(self.layer_polygons, f)
             f.close()
 
+        # self.plot_mesh()
+        # self.plot_layer_edge(3)
+        # self.plot_lattice()
+
         if os.path.isfile("graph.pckl"):
             f = open('graph.pckl', 'rb')
             self.layer_graphs = pickle.load(f)
@@ -64,7 +69,9 @@ class Slicer:
             pickle.dump(self.layer_graphs, f)
             f.close()
 
-        # self.n_layers = 1
+        # self.plot_layer_graph(0)
+
+        
         self.planner = Planner(self.params, self.layer_polygons, self.layer_graphs)
 
         if os.path.isfile("path.pckl"):
@@ -80,16 +87,14 @@ class Slicer:
             pickle.dump(self.layer_full_graphs, f)
             f.close()
 
-        # test_idx = 360
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
         for layer_idx, layer_data in enumerate(self.layer_paths):
             for pts in layer_data:
-                # print(layer_idx * self.params["layer_height"])
                 ax.plot(*pts.T, layer_idx*self.params["layer_height"])
-        # for offset_path in self.layer_paths[test_idx]:
+        # # for offset_path in self.layer_paths[1]:
         #     plt.plot(*offset_path.T,"-b")
-        #     plt.axis('equal')
+        # plt.axis('equal')
 
 
 
@@ -116,7 +121,7 @@ class Slicer:
                         self.mesh.vertices[:,1], 
                         triangles=self.mesh.faces, 
                         Z=self.mesh.vertices[:,2], 
-                        alpha=.4)
+                        alpha=1)
         
     def create_raw_slices(self) -> np.ndarray:
         """
@@ -152,7 +157,7 @@ class Slicer:
             
 
 
-            # self.plot_layer_edge(33)
+            
 
             # print(slices)
             
@@ -443,6 +448,26 @@ class Slicer:
                 # remove all isolated vertices
                 G.remove_nodes_from(list(nx.isolates(G)))
 
+                extra_edges = []
+                for cur_node in list(G.nodes):
+                    if G.degree(cur_node) == 1:
+                        for other_node in list(G.nodes):
+                            if G.degree(other_node) == 1 and cur_node != other_node:
+                                x1 = G.nodes[cur_node]["x"]
+                                y1 = G.nodes[cur_node]["y"]
+                                x2 = G.nodes[other_node]["x"]
+                                y2 = G.nodes[other_node]["y"]
+                                dist = math.sqrt((x2-x1)**2 + (y2-y1)**2)
+                                if dist < self.params["line_width"]:
+                                    if (cur_node, other_node) not in extra_edges and (other_node, cur_node) not in extra_edges:
+                                        # now check angle
+                                        v1_neighbor = next(G.neighbors(cur_node))
+                                        v2_neighbor = next(G.neighbors(other_node))
+                                        if v1_neighbor != v2_neighbor:
+                                            G.add_edges_from([(cur_node, other_node)])
+                                            extra_edges.append((cur_node, other_node))
+                        
+
                 # nx.draw(G, pos=posgen(G),node_size = 1)
 
                 # add graph to collection of graphs per layer
@@ -463,6 +488,10 @@ class Slicer:
             plt.figure()
 
             nx.draw(G, pos=posgen(G), node_size = 1, with_labels=True)
+
+    def plot_lattice(self) -> None:
+        latt = self.lattice
+        latt.plot()
             
         
 
