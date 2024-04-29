@@ -21,12 +21,14 @@ import sys
 sys.setrecursionlimit(10000)
 
 class TreeNode(object):
-    def __init__(self, pos: Tuple[float, float] = None, node = None, parent = None, children: List = None, is_boundary = False):
-        self.pos = pos
+    def __init__(self, pos: Tuple[float, float] = None, node: int = None, parent = None, children: List = None) -> None:
         self.node = node
+        self.pos = pos
         self.parent = parent
-        self.children = children if children is not None else []
-        self.is_boundary = is_boundary
+        if children is None:
+            self.children = []
+        else:
+            self.children = children
     
     def __hash__(self) -> int:
         return hash(self.pos[0]) + hash(self.pos[1])
@@ -58,7 +60,7 @@ class Planner:
         layer_paths = []
         layer_full_graphs = []
         for layer_idx in range(self.n_layers):
-            # layer_idx = 140
+            # layer_idx = 37
             region_paths = []
 
             
@@ -71,6 +73,9 @@ class Planner:
 
 
                 tree, complete_graph =self.generate_spanning_tree(polygon, graph)
+                # nx.draw(complete_graph, pos=posgen(graph), node_size = 1, with_labels=False)
+                # self.plot_tree(tree[0])
+                plt.axis("equal")
 
                 # print(tree)
                 
@@ -79,6 +84,9 @@ class Planner:
                 if tree:
                     for root in tree:
                         point_path = self.generate_path(root)
+
+                        # plt.plot(*np.array(point_path).T,"-b")
+                        # plt.axis('equal')
                         
                         line = LineString(point_path)
                         offset_path = np.array(line.buffer(.5*self.params["line_width"]).exterior.coords)
@@ -90,10 +98,10 @@ class Planner:
                 # plt.axis('equal')
             layer_paths.append(region_paths)
             layer_full_graphs.append(complete_graph)
-            # return
+            # return [], []
             pbar.update(1)
             
-
+        
         return layer_paths, layer_full_graphs
 
     def generate_gcode(self, params):
@@ -282,10 +290,11 @@ class Planner:
         # nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=True)
         # plt.axis("equal")
 
-        # return []
+        
 
         new_edges = []
 
+        # return None, None
         
 
 
@@ -334,18 +343,18 @@ class Planner:
         graph.add_edges_from(new_edges)
         # print(new_edges)
    
-#         nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=True)
+#         nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=False)
 #         plt.axis("equal")
-# #           
+# # #           
         
-        # return []
+        
         # find a starting point and remove close points
 
        
         used_pts = []
         # print(outside_pts)        
 
-        # return []
+        # return None, None
     
         def is_valid_enter_pt(start_idx):
             x_1 = graph.nodes[start_idx]["x"]
@@ -389,7 +398,6 @@ class Planner:
             used_pts.append(cur_node)
             
             while True:
-                
                 x_1 = graph.nodes[potential_start_idx]["x"]
                 y_1 = graph.nodes[potential_start_idx]["y"]
                 x_2 = graph.nodes[del_node]["x"]
@@ -417,9 +425,20 @@ class Planner:
 
                     break
                 cur_node = del_node
+
+                # break case, we have run out of things to delete
+                if not list(graph.neighbors(cur_node)):
+                    break
+
                 del_node = next(graph.neighbors(cur_node))
+                # print(list(graph.neighbors(cur_node)))
                 while del_node not in outside_pts[region_idx] or del_node in used_pts:
+                    if del_node in used_pts and graph.degree(cur_node) == 1:
+                        break
                     del_node = next(graph.neighbors(cur_node))
+                    # cur_node = del_node
+                    # print(del_node)
+
 
             potential_start_idxs.append(potential_start_idx)
             # print(potential_start_idxs)
@@ -428,83 +447,88 @@ class Planner:
 
         
         # print(potential_start_idxs)
-        # nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=True)
-        # return []
+        # nx.draw(graph, pos=posgen(graph), node_size = 1, with_labels=False)
+        # return None, None
         
         # print(len(list(nx.connected_components(graph))))
         roots = []
         for start_idx in potential_start_idxs:
 
-            visited = set()  # Set to keep track of visited nodes
-            tree_edges = []  # List to store edges of the spanning tree
+            if start_idx in list(graph.nodes):
+                visited = set()  # Set to keep track of visited nodes
+                tree_edges = []  # List to store edges of the spanning tree
 
+                def dfs(node, parent):
+                    # mark the current not as having been visited
+                    visited.add(node)
 
-            def dfs(node, parent):
-                visited.add(node)
-                # print(node)
-                for neighbor in graph.neighbors(node):
-                    
-                    if neighbor != parent:
-                        if neighbor not in visited:
-                            tree_edges.append((node, neighbor))
-                            dfs(neighbor, node)
-                        else:
-                            # Ensure each node is visited at most twice
-                            if (node, neighbor) not in tree_edges and (neighbor, node) not in tree_edges:
+                    # iterate through each connected node
+                    for neighbor in graph.neighbors(node):
+                        if neighbor != parent:
+
+                            # found a node that hasn't been visited, so continue down path
+                            if neighbor not in visited:
                                 tree_edges.append((node, neighbor))
+                                dfs(neighbor, node)
 
-            # print("starting at ",start_idx)
-            dfs(start_idx, None)
-            
-            # # create a dictionary to hold the nodes of the lattice
-            unique_nodes = {}
+                            # Node has already been visited, so create leaf of tree
+                            else:
+                                # double check we haven't created this edge before
+                                if (node, neighbor) not in tree_edges and (neighbor, node) not in tree_edges:
+                                    tree_edges.append((node, neighbor))
 
-            # # get unique nodes and insert into dictionary
-            for edge in tree_edges:
-                node_1, node_2 = edge
-                if node_1 not in unique_nodes.keys():
-                    unique_nodes[node_1] = TreeNode(node=node_1)
-                if node_2 not in unique_nodes.keys():
-                    unique_nodes[node_2] = TreeNode(node=node_2)
-            
+                dfs(start_idx, None)
+                
+                # # create a dictionary to hold the nodes of the lattice
+                unique_nodes = {}
 
-            # using tree_edge list, establish connectivity between nodes
-            for edge in tree_edges:
-                parent_idx, child_idx = edge
-                parent = unique_nodes[parent_idx]
-                child = unique_nodes[child_idx]
+                # # get unique nodes and insert into dictionary
+                for edge in tree_edges:
+                    node_1, node_2 = edge
+                    if node_1 not in unique_nodes.keys():
+                        unique_nodes[node_1] = TreeNode(node=node_1)
+                    if node_2 not in unique_nodes.keys():
+                        unique_nodes[node_2] = TreeNode(node=node_2)
+                
 
-                parent_pos = (graph.nodes[parent_idx]['x'],graph.nodes[parent_idx]['y'])
-                offset_table = {"triangle":2.31, "square":2, "hexagon":2}
-                # if the node has already been used, create new one at same spot, but now leaf
-                if child.parent:
-                    child = TreeNode()
-                    child_pos = (graph.nodes[child_idx]['x'],graph.nodes[child_idx]['y'])
-                    x_1, y_1 = parent_pos
-                    x_2, y_2 = child_pos
-                    vec_a = np.array([x_2, y_2]) - np.array([x_1,y_1])
-                    length = np.linalg.norm(vec_a)
-                    vec_a = vec_a/length * (length - offset_table[self.params["infill"]]*self.params["line_width"])
-                    child_pos = (x_1 + vec_a[0], y_1 + vec_a[1])
+                # using tree_edge list, establish connectivity between nodes
+                for edge in tree_edges:
+                    parent_idx, child_idx = edge
+                    parent = unique_nodes[parent_idx]
+                    child = unique_nodes[child_idx]
 
-                else:
-                    child_pos = (graph.nodes[child_idx]['x'],graph.nodes[child_idx]['y'])
+                    parent_pos = (graph.nodes[parent_idx]['x'],graph.nodes[parent_idx]['y'])
+                    offset_table = {"triangle":2.31, "square":2, "hexagon":2}
+                    # if the node has already been used, create new one at same spot, but now leaf
+                    if child.parent:
+                        child = TreeNode()
+                        child_pos = (graph.nodes[child_idx]['x'],graph.nodes[child_idx]['y'])
+                        x_1, y_1 = parent_pos
+                        x_2, y_2 = child_pos
+                        vec_a = np.array([x_2, y_2]) - np.array([x_1,y_1])
+                        length = np.linalg.norm(vec_a)
+                        vec_a = vec_a/length * (length - offset_table[self.params["infill"]]*self.params["line_width"])
+                        child_pos = (x_1 + vec_a[0], y_1 + vec_a[1])
 
+                    else:
+                        child_pos = (graph.nodes[child_idx]['x'],graph.nodes[child_idx]['y'])
+
+
+                    
+                    parent.pos = parent_pos
+                    child.pos = child_pos
+
+                    parent.children.append(child)
+                    child.parent = parent     
+                # print(potential_start_idx)
+                
+                root = unique_nodes[start_idx]
+                # print(root)
 
                 
-                parent.pos = parent_pos
-                child.pos = child_pos
-
-                parent.children.append(child)
-                child.parent = parent     
-            # print(potential_start_idx)
-            root = unique_nodes[start_idx]
-            # print(root)
-
             
-        
-            # self.plot_tree(root)  
-            roots.append(root)
+                # self.plot_tree(root)  
+                roots.append(root)
         
         return roots, graph
 
@@ -516,9 +540,9 @@ class Planner:
             self.plot_tree(child)
             
 
-    def generate_path(self, tree: TreeNode) -> Tuple[List[Tuple], List[TreeNode]]:
-        points = []
+    def generate_path(self, tree: TreeNode) -> List[Tuple[float]]:
 
+        points = []
         def dfs(node) -> None:
             
             points.append(node.pos)
@@ -564,6 +588,12 @@ def intersection_point(line1, line2):
     vec_2 = p3 - p1
 
     proj_dist =( vec_2 @ vec_1 ) / (vec_1 @ vec_1)
+
+    proj_dist = max(0,proj_dist)
+
+    proj_dist = min(proj_dist, np.linalg.norm(vec_1))
+        
+
     point = proj_dist*vec_1 + p1
 
     return point[0], point[1]
