@@ -100,12 +100,127 @@ class Planner:
             layer_full_graphs.append(complete_graph)
             # return [], []
             pbar.update(1)
+
+        
             
         
         return layer_paths, layer_full_graphs
 
-    def generate_gcode(self, params):
-        pass           
+    def generate_gcode(self, layer_paths):
+        pbar = tqdm(total=self.n_layers,desc = "Generating gcode")
+        extrusion = 0
+        layer_num = 0 
+
+        def generate_gcode_for_loop(layer_loops, extrusion, layer_num, feed_rate=100, retract_distance=.08, lift_distance=2):
+            # global extrusion
+            # global layer_num
+            gcode = []
+            gcode.append(f";LAYER:{layer_num}")
+            for points in layer_loops:
+                # Set feed rates
+                gcode.append(f"G1 F2100 E{extrusion + .08}")
+                gcode.append(f"G1 F{feed_rate}")  # Set X, Y, and Z feed rate
+                
+                
+                # Generate G-code for loop
+                for idx, point in enumerate(points):
+                    x, y, z = point
+
+                    # go to start point and drop to level
+                    if idx == 0:
+                        gcode.append(f"G0 X{x} Y{y}")
+                        gcode.append(f"Go Z{z}")
+
+                    else:
+                        # calc distance moved
+                        ratio = self.params["layer_height"]*self.params["line_width"] / ((1.75/2)**2*3.14)
+                        dist = math.sqrt((x - old_x)**2 + (y - old_y)**2)*ratio
+                        extrusion += dist
+
+                        gcode.append(f"G1 X{x} Y{y} E{extrusion}")
+
+                    old_x = x
+                    old_y = y
+                
+                # retract filament a slight amount and move up Z 
+                gcode.append(f"G1 F2100 E{extrusion - retract_distance}")
+                gcode.append(f"G0 F{feed_rate} Z{z+lift_distance*self.params['layer_height']}")
+
+
+            layer_num = layer_num + 1
+                    
+            return gcode, extrusion, layer_num          
+
+        def generate_gcode_for_loops(loops, extrusion, layer_num, feed_rate=100):
+            # global extrusion
+            gcode = []
+            
+            # Initialize
+            gcode.append("M82") # set absolute extrusion mode
+            gcode.append("G21")  # Set units to millimeters
+            gcode.append("G90")  # Set to absolute positioning
+            gcode.append("G92 E0")  # Zero the extruder
+            gcode.append("M82") # set absolute extrusion mode
+
+            # set temps
+            gcode.append("M104 S200")
+            gcode.append("M140 S60")
+            gcode.append("M190 S60")
+            gcode.append("M109 S200")
+            
+            # Home
+            gcode.append("G28")  # Home all axes
+            gcode.append("G92 E0.0")
+            gcode.append(f"G1 F2100 E{extrusion - .08}")
+            
+            # Set feed rates
+            gcode.append(f"G1 F{feed_rate}")  # Set X, Y, and Z feed rate
+            
+            # Generate G-code for each loop
+            gcode.append(f";LAYER_COUNT:{self.n_layers - 1}")
+            for loop in loops:
+                new_code, extrusion, layer_num = generate_gcode_for_loop(loop, extrusion, layer_num)
+                gcode.extend(new_code)
+                pbar.update(1)
+                
+            
+            # End of program
+            gcode.append("M140 S0")
+            gcode.append("M107")
+            gcode.append("M104 S0")
+            gcode.append("M140 S0")
+            gcode.append("M107")
+            gcode.append("M84")
+            gcode.append("M82")
+            gcode.append("M30")  # End of program
+            
+            return "\n".join(gcode)
+        
+        loops = []
+
+        for layer_idx, layer in enumerate(layer_paths):
+            layer_loops = []
+            layer_height = layer_idx * .2
+            for array in layer:
+                new_column = np.full((array.shape[0], 1), layer_height)
+
+            # Horizontally stack the original array and the new column
+                new_arr = np.hstack((array, new_column))
+                layer_loops.append(new_arr)
+            
+            loops.append(layer_loops)
+            
+
+
+
+        # Generate G-code
+        gcode_content = generate_gcode_for_loops(loops, extrusion, layer_num)
+
+        # Save G-code to a file
+        with open("output.gcode", "w") as file:
+            file.write(gcode_content)
+
+
 
     def generate_spanning_tree(self, polygon: Polygon, graph: nx.Graph) -> TreeNode:
         """
