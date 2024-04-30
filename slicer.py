@@ -45,13 +45,13 @@ class Slicer:
         
 
         # layer cleanup to create graphs
-        if os.path.isfile("poly.pckl"):
-            f = open('poly.pckl', 'rb')
+        if os.path.isfile("pickled-vars/poly.pckl"):
+            f = open('pickled-vars/poly.pckl', 'rb')
             self.layer_polygons = pickle.load(f)
             f.close()
         else:
             self.layer_polygons = self.slice_to_polly(self.layer_edges)
-            f = open('poly.pckl', 'wb')
+            f = open('pickled-vars/poly.pckl', 'wb')
             pickle.dump(self.layer_polygons, f)
             f.close()
 
@@ -59,13 +59,13 @@ class Slicer:
         # self.plot_layer_edge(3)
         # self.plot_lattice()
 
-        if os.path.isfile("graph.pckl"):
-            f = open('graph.pckl', 'rb')
+        if os.path.isfile("pickled-vars/graph.pckl"):
+            f = open('pickled-vars/graph.pckl', 'rb')
             self.layer_graphs = pickle.load(f)
             f.close()
         else:
             self.layer_graphs = self.generate_layer_graphs(self.lattice, self.layer_polygons)
-            f = open('graph.pckl', 'wb')
+            f = open('pickled-vars/graph.pckl', 'wb')
             pickle.dump(self.layer_graphs, f)
             f.close()
 
@@ -74,16 +74,16 @@ class Slicer:
         
         self.planner = Planner(self.params, self.layer_polygons, self.layer_graphs)
 
-        if os.path.isfile("path.pckl"):
-            f = open('path.pckl', 'rb')
+        if os.path.isfile("pickled-vars/path.pckl"):
+            f = open('pickled-vars/path.pckl', 'rb')
             self.layer_paths = pickle.load(f)
             f.close()
         else:
             self.layer_paths, self.layer_full_graphs = self.planner.plan()            
-            f = open('path.pckl', 'wb')
+            f = open('pickled-vars/path.pckl', 'wb')
             pickle.dump(self.layer_paths, f)
             f.close()
-            f = open('full_graphs.pckl','wb')
+            f = open('pickled-vars/full_graphs.pckl','wb')
             pickle.dump(self.layer_full_graphs, f)
             f.close()
 
@@ -92,10 +92,8 @@ class Slicer:
         for layer_idx, layer_data in enumerate(self.layer_paths):
             for pts in layer_data:
                 ax.plot(*pts.T, layer_idx*self.params["layer_height"])
-        # # for offset_path in self.layer_paths[1]:
-        #     plt.plot(*offset_path.T,"-b")
-        # plt.axis('equal')
 
+        self.planner.generate_gcode(self.layer_paths)
 
 
         
