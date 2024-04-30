@@ -109,7 +109,6 @@ def which_paths(x : int, seed : int):
 
 def create_path(G: nx.Graph, tree: nx.Graph, width: float, seed):
     l_ed = []
-    AA = nx.Graph()
     for u,v in G.edges:
         if not tree.has_edge(u,v):
             l_ed.append((u,v))
