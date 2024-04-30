@@ -9,12 +9,18 @@ import pickle
 if __name__ == "__main__":
 
     demo_files = {
-        "211": "bunny_large_hex", "201": "bunny_small_hex",
-        "011": "bunny_large_triangle", "001": "bunny_small_triangle",
-        "111": "bunny_large_square", "101": "bunny_small_square",
-        "210": "cube_large_hex", "200": "cube_small_hex",
-        "010": "cube_large_triangle", "000": "cube_small_triangle",
-        "110": "cube_small_square", "100": "cube_large_square"
+        "211": "bunny_large_hex", 
+        "201": "bunny_small_hex",
+        "011": "bunny_large_triangle", 
+        "001": "bunny_small_triangle",
+        "111": "bunny_large_square", 
+        "101": "bunny_small_square",
+        "210": "cube_large_hex", 
+        "200": "cube_small_hex",
+        "010": "cube_large_triangle", 
+        "000": "cube_small_triangle",
+        "110": "cube_large_square", 
+        "100": "cube_small_square"
     }
 
     state = {"infill": "0", "size": "0", "model": "0", "range": 100}
