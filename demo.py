@@ -1,38 +1,30 @@
 from slicer import Slicer
 from matplotlib import pyplot as plt
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Button, Slider
+from matplotlib.widgets import Button, Slider, TextBox
 import numpy as np
 import pickle
 
 
 if __name__ == "__main__":
 
-    demo_files = {"211": "bunny_large_hex", 
-                  "201": "bunny_small_hex",
-                  "011": "bunny_large_triangle",
-                  "001": "bunny_small_triangle",
-                  "111": "bunny_large_square",
-                  "101": "bunny_small_square",
-                  "210": "cube_large_hex",
-                  "200": "cube_small_hex",
-                  "010": "cube_large_triangle",
-                  "000": "cube_small_triangle",
-                  "110": "cube_small_square",
-                  "100": "cube_large_square",
-                  }
-
+    demo_files = {
+        "211": "bunny_large_hex", "201": "bunny_small_hex",
+        "011": "bunny_large_triangle", "001": "bunny_small_triangle",
+        "111": "bunny_large_square", "101": "bunny_small_square",
+        "210": "cube_large_hex", "200": "cube_small_hex",
+        "010": "cube_large_triangle", "000": "cube_small_triangle",
+        "110": "cube_small_square", "100": "cube_large_square"
+    }
 
     state = {"infill": "0", "size": "0", "model": "0", "range": 100}
 
     demo_data = {}
 
     for key, value in demo_files.items():
-        f = open(f'demo-files/{value}.pckl', 'rb')
-        layer_paths = pickle.load(f)
-        f.close()
+        with open(f'demo-files/{value}.pckl', 'rb') as f:
+            layer_paths = pickle.load(f)
         demo_data[key] = layer_paths
-
 
     def plot_model():
         ax.clear()
@@ -42,13 +34,14 @@ if __name__ == "__main__":
         n_layers = len(layer_paths)
         upper_val = int((state["range"] * n_layers) / 100 )
 
+        upper_val = max(1,upper_val)
+
         for layer_idx, layer_data in enumerate(layer_paths[0:upper_val]):
             for pts in layer_data:
                 ax.plot(*pts.T, layer_idx*0.2)
         
         plt.axis("equal")
         fig.canvas.draw_idle()
-
 
     def plot_hex(event):
         if state["infill"] != "2":
@@ -85,11 +78,26 @@ if __name__ == "__main__":
             state["model"] = "1"
             plot_model()
 
+    def update_range(val):
+        try:
+            val = int(val)
+            if 0 <= val <= 100:
+                state["range"] = val
+                slider.set_val(val)
+                plot_model()
+            else:
+                print("Value must be between 0 and 100.")
+        except ValueError:
+            print("Please enter a valid integer.")
+
+    def update_slider(val):
+        range_text_box.set_val(str(int(val)))
+        state["range"] = int(val)
+        plot_model()
 
     # Create initial plot
     fig = plt.figure(figsize=(12, 10))
     ax = fig.add_subplot(projection='3d')
-    
 
     plot_model()
 
@@ -122,26 +130,14 @@ if __name__ == "__main__":
     cube_button.on_clicked(plot_cube)
     bunny_button.on_clicked(plot_bunny)
 
-    # Initial range
-    range_min = 0
-    range_max = 100
-    initial_lower_value = range_min
-    initial_upper_value = range_max
+    # Create slider for range
+    slider_ax = plt.axes([0.1, 0.25, 0.02, 0.65], facecolor='lightgray')
+    slider = Slider(slider_ax, 'Range', 0, 100, valinit=state["range"], valstep=5,orientation="vertical")
+    slider.on_changed(update_slider)
 
-    # Create sliders for lower and upper bounds
-    slider_upper_ax = plt.axes([0.1, 0.25, 0.02, 0.65], facecolor='lightgray')
-
-    slider_upper = Slider(slider_upper_ax, 'Percent of Layers Shown', range_min, range_max, valinit=initial_upper_value, orientation='vertical')
-
-    # Define update function for the sliders
-    def update_slider(val):
-        # get n_layers
-        state["range"] =  slider_upper.val
-
-        plot_model()
-
-    slider_upper.on_changed(update_slider)
-
-
+    # Create text input for range
+    range_text_box_ax = plt.axes([0.09, 0.18, 0.05, 0.03])
+    range_text_box = TextBox(range_text_box_ax, '', initial=str(state["range"]))
+    range_text_box.on_submit(update_range)
 
     plt.show()
