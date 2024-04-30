@@ -9,14 +9,13 @@ import pickle
 import collections
 from matplotlib.backend_bases import KeyEvent
 
-
+###UTIL START
 def cpickle():
     f = open('full_graphs.pckl','rb')
     h = pickle.load(f)
     f.close()
     #print(h)
     return h
-
 def uvec(vector):
     return vector / np.linalg.norm(vector)
 def angle_between(v1, v2):
@@ -26,45 +25,30 @@ def angle_between(v1, v2):
 def posgen(G):
     ret = {}
     for n in G:
-        #print(n)
-        #print(G.nodes)
         ret[n] = [G.nodes[n]["x"],G.nodes[n]["y"]]
     return ret
 def colgen(G):
     ret = []
-    #print(len(G.edges),"aaaaa")
     for i,n in enumerate(G.edges):
-        #print(n)
-        #print(G.edges)
         if n[0] <= -1 or n[1] <= -1:
             ret.append('lightgreen')
         else:
             ret.append('darkblue')
     return ret
-
 def angC(G: nx.Graph, a: tuple, b:tuple):
-    #print(a,b, "CALLED ANGC")
     rr = tuple(set(a) & set(b))
-    #print(rr, "TWO EDGES")
     rra1 = invr(a.index(rr[0]))
     rrb1 = invr(b.index(rr[0]))
     ooox = np.array([G.nodes[rr[0]]["x"], G.nodes[rr[0]]["y"]])
     p1 = np.array([G.nodes[a[rra1]]["x"], G.nodes[a[rra1]]["y"]])
     p2 = np.array([G.nodes[b[rrb1]]["x"], G.nodes[b[rrb1]]["y"]])
-    #print(p1,ooox,p2)
     p1=(p1-ooox)
     p2=(ooox-p2)
-    #print(p1,p2,"p1p2")
     p1=uvec(p1)
     p2=uvec(p2)
-    #angle = np.arctan2(p1,p2)[0]
     angle = np.arctan2(np.cross(p1, p2), np.dot(p1, p2))
-    #print(angle)
     return angle
-
 def outb(a: list, b: tuple):
-    #print(a, "BEFORE REM")
-    #print(b, "tuple to be removed")
     if b == None: return a
     c=(b[1],b[0])
     if b in a:
@@ -74,17 +58,16 @@ def outb(a: list, b: tuple):
         a.remove(c)
         return a.copy()
     else: return a.copy()
-    
 def gover(a: tuple, b: int):
     if a[0] == b:
         return a[1]
     else: return a[0]
-
 def invr(a: int):
     if a==1:
         return 0
     elif a==0:
         return 1
+###UTIL END
 
 data1 = [(0,{"x": 0, "y": 0}),
          (1,{"x": 1, "y": 0}),
@@ -119,7 +102,7 @@ data2 = [(0,1),
          (5,10)
          ]
 
-def which_paths(x : int, seed : int): #TODO optional way to pick a path out of 2^(x) paths
+def which_paths(x : int, seed : int): 
     if seed >= 2**x: return None
     tf = [False, True]
     return list(product(tf, repeat=x))[seed]
@@ -133,8 +116,6 @@ def create_path(G: nx.Graph, tree: nx.Graph, width: float, seed):
     ch_b = [True] * len(l_ed)
     ch_b = which_paths(len(l_ed), seed)
     for i in range(len(l_ed)):
-        #u = l_ed[i][0]
-        #v = l_ed[i][1]
         if ch_b[i] == True:
             unx = np.array([G.nodes[l_ed[i][0]]["x"]-G.nodes[l_ed[i][1]]["x"],G.nodes[l_ed[i][0]]["y"]-G.nodes[l_ed[i][1]]["y"]])
             unx_hat = unx / np.linalg.norm(unx)
@@ -153,7 +134,7 @@ def create_path(G: nx.Graph, tree: nx.Graph, width: float, seed):
     except KeyError:
         verxcount = 0
     traj = []
-    sn = 0 #sn
+    sn = 0 #start node
     crnn = sn
     cuee = G.edges(sn)
     icm_e = None
@@ -166,8 +147,6 @@ def create_path(G: nx.Graph, tree: nx.Graph, width: float, seed):
         if lastcycle: break
         if crnn == sn and ixix>4 and  (((lverxcount == verxcount and verxcount != 0) or (verxcount == 0 and LEFTORRIGHT==True)) and (verxcount+len(l_ed) == allturnc)): lastcycle = True
         ava_e = outb(list(cuee), icm_e)
-        #print(ava_e, "avae")
-        #print(icm_e, "icme")
         if icm_e == None:
             traj.append(crnn)
             crnn = gover(ava_e[0],crnn)
@@ -180,19 +159,11 @@ def create_path(G: nx.Graph, tree: nx.Graph, width: float, seed):
             allturnc+=1
             traj.append(crnn)
             traj.append("TURN")
-            #print("TURNING")
             icm_e = None
-            #print(crnn, "crnn val rn")
-            #print(icm_e, "icm val rn")
-            #print(ava_e, "ava val rn")
             continue
-              
         anglepicks = np.zeros(len(ava_e))
         for edge in range(len(ava_e)):
-            #print(edge, "AAAAAAAA")
             anglepicks[edge] = angC(G, ava_e[edge], icm_e)
-        #print(anglepicks, "ANGLE PICKS")
-        #print(ava_e, "AVAE AFTER")
         indextogo = anglepicks.argmin()
         traj.append(crnn)
         crnn = gover(ava_e[indextogo], crnn)
@@ -200,10 +171,9 @@ def create_path(G: nx.Graph, tree: nx.Graph, width: float, seed):
         icm_e = ava_e[indextogo]
         ixix+=1
     print(traj, "CALCULATED TRAVERSAL ORDER STARTING AT {A}".format(A=sn))
-    #print("THESE ARE THE DEGREES: ", degrees)
+    #print("DEGREES: ", degrees)
     return traj
               
-
 def create_gcode(): #TODO
     pass     
         
@@ -273,7 +243,6 @@ G = nx.Graph()
 G.add_nodes_from(data1)
 G.add_edges_from(data2)
 
-
 # FA = cpickle()[0]
 # FA = nx.convert_node_labels_to_integers(FA,first_label=0)
 # print("Num of Possible Unique Spanning Trees:", n_stree(FA))
@@ -341,5 +310,3 @@ while not closer:
     
     plt.pause(1/240) #refresh rate
     
-#nx.draw(G, pos, with_labels=True, node_color='lightblue', node_size=200, edge_color=colgen(G))
-#plt.show()
