@@ -51,7 +51,7 @@ class Planner:
         self.layer_polygons = layer_polygons
         self.n_layers = len(layer_graphs)
     
-    def plan(self):
+    def generate_layer_paths(self):
         """
         For all layers, generate spanning tree, then path, then generate gcode
         """
@@ -72,10 +72,10 @@ class Planner:
                 
 
 
-                tree, complete_graph =self.generate_spanning_tree(polygon, graph)
+                tree =self.generate_spanning_tree(polygon, graph)
                 # nx.draw(complete_graph, pos=posgen(graph), node_size = 1, with_labels=False)
                 # self.plot_tree(tree[0])
-                plt.axis("equal")
+                # plt.axis("equal")
 
                 # print(tree)
                 
@@ -97,14 +97,15 @@ class Planner:
                 #     plt.plot(*offset_path.T,"-b")
                 # plt.axis('equal')
             layer_paths.append(region_paths)
-            layer_full_graphs.append(complete_graph)
+            
+            # layer_full_graphs.append(complete_graph)
             # return [], []
             pbar.update(1)
 
         
             
         
-        return layer_paths, layer_full_graphs
+        return layer_paths
 
     def generate_gcode(self, layer_paths):
         pbar = tqdm(total=self.n_layers,desc = "Generating gcode")
@@ -471,16 +472,6 @@ class Planner:
 
         # return None, None
     
-        def is_valid_enter_pt(start_idx):
-            x_1 = graph.nodes[start_idx]["x"]
-            y_1 = graph.nodes[start_idx]["y"]
-            for point in new_end_nodes:
-                x_2,y_2 = point
-                if math.sqrt((x_1 - x_2)**2 + (y_1 - y_2)**2) < 2*self.params["line_width"]:
-                    return False
-                if point in graph.neighbors(start_idx):
-                    return False
-            return True
         
         def get_valid_start_pt(outside_pts):
             for idx in outside_pts:
@@ -645,7 +636,7 @@ class Planner:
                 # self.plot_tree(root)  
                 roots.append(root)
         
-        return roots, graph
+        return roots
 
     
     def plot_tree(self, node: TreeNode) -> None:

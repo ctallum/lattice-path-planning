@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 
 
 if __name__ == "__main__":
-    path = "./models/bunny.stl"
+    path = "./models/20mm_cube.stl"
 
     params = {
         "layer_height": 0.2,
@@ -16,6 +16,6 @@ if __name__ == "__main__":
 
     slicer = Slicer(params)
 
-    slicer.slice(path)
+    slicer.slice(path, debug_mode=True)
 
     plt.show()
