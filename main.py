@@ -16,6 +16,6 @@ if __name__ == "__main__":
 
     slicer = Slicer(params)
 
-    slicer.slice(path, debug_mode=True)
+    slicer.slice(path, debug_mode=False)
 
     plt.show()

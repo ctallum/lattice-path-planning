@@ -5,7 +5,7 @@ infill geometry
 
 from matplotlib import pyplot as plt
 import numpy as np
-from typing import Tuple, Dict, List
+from typing import Dict, List
 import trimesh 
 from matplotlib.patches import Polygon
 from tqdm import tqdm
