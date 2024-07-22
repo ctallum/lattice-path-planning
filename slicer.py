@@ -76,9 +76,10 @@ class Slicer:
         # load the mesh and slice and perform a quick generation of the internal lattice 
         mesh = self.load_part(self.params.path)
         lattice = self.generate_lattice(mesh)
-        layer_edges = self.create_raw_slices(mesh)
+        # layer_edges = self.create_raw_slices(mesh)
         
-        self.n_layers = len(layer_edges)
+        # self.n_layers = len(layer_edges)
+        self.n_layers = 540
 
         # base directory for all pickled variables
         base_dir = "pickled-vars/"
@@ -328,20 +329,52 @@ class Slicer:
         layer_graphs = []
 
         for polygons in layer_polygons:
+            
+            # for each layer, create a list to hold all potential graphs
             graphs = []
+
+            # for each layer, create a list of all lattice edges
+            lat_points = []
+            lat_edges = []
+
+            # get a list of all edges in the lattice
+            for cur_node in range(lattice.num_sites):
+                lat_points.append(lattice.position(cur_node))
+                # insert the edge indices of the lattice into the list 
+                for neighbor in lattice.neighbors(cur_node):
+                    lat_edges.append([cur_node, neighbor])
+
+            # get all the unique edges
+            lat_edges = np.unique(np.array(lat_edges),axis=0)
+            lat_points = np.array(lat_points)
+
+            # combine lattice info into line segment array
+            lat_start_points = lat_points[lat_edges[:,0]]
+            lat_end_points = lat_points[lat_edges[:,1]]
+            lat_line_segments = np.stack((lat_start_points, lat_end_points), axis=1)
+
             for polygon in polygons:
                 # create graph of polygon
-                G_polygon = nx.Graph()
-                vertices = polygon.get_xy()
+                poly_vertices = polygon.get_xy()
                 
-                graph_vertices = [(idx,{"x":val[0], "y":val[1]}) for idx,val in enumerate(vertices[:-1])]
-                G_polygon.add_nodes_from(graph_vertices)
-
-                graph_edges = [(i,i+1) for i in range(len(vertices) - 2)]
+                graph_edges = [(i,i+1) for i in range(len(poly_vertices) - 2)]
                 graph_edges.append((0,len(graph_edges)))
-                G_polygon.add_edges_from(graph_edges)
+                graph_edges = np.array(graph_edges)
 
-                nx.draw(G_polygon, pos=posgen(G_polygon), node_size = 1, with_labels=False)
+                # create "zipped" versions of polygon edges so we can calculate intersections
+                poly_start_points = poly_vertices[graph_edges[:,0]]
+                poly_end_points = poly_vertices[graph_edges[:,1]]
+                poly_line_segments = np.stack((poly_start_points, poly_end_points), axis=1)
+
+                # check each lattice line segment against each polygon line segment
+                # lat_problem_edge_idx = np.array([])
+
+                for segment_idx, poly_line_segment in enumerate(poly_line_segments):
+                    print(np.shape(lat_line_segments))
+                    intersect_array = intersect(poly_line_segment, lat_line_segments)
+                    print(intersect_array)
+                    
+
 
 
                 graphs.append([])
@@ -414,16 +447,28 @@ def dist_btw_graph_nodes(graph: nx.Graph, node_1: int, node_2: int) -> float:
     return math.sqrt((x2-x1)**2 + (y2-y1)**2)
 
 # Return true if line segments AB and CD intersect
-def intersect(A: List[List], B: List[List], C: List[List], D: List[List]):
+def intersect(AB: np.ndarray, CD: np.ndarray) -> np.ndarray:
     """
-    Return true if line segments AB and CD intersect
+    Return a boolean array indicating if line segment AB intersects with each line segment in CD.
 
     params:
-        A,B,C,D: List[List] of coordinate points
+        AB: np.ndarray - 2x2 array containing coordinates of points A and B
+        CD: np.ndarray - nx2x2 array containing coordinates of points C and D
     """
-    def ccw(A,B,C):
-        return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
-    return ccw(A,C,D) != ccw(B,C,D) and ccw(A,B,C) != ccw(A,B,D)
+    A = AB[0]
+    B = AB[1]
+    
+    C = CD[:, 0]
+    D = CD[:, 1]
+    
+    #TODO Fix this so that it properly vectorizes things
+    def ccw(A, B, C):
+        return (C[:, 1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[:, 0] - A[0])
+    
+    ccw_ACD = ccw(A, B, C) != ccw(A, B, D)
+    ccw_ABC = ccw(A, C, D) != ccw(B, C, D)
+    
+    return ccw_ACD & ccw_ABC
 
 def posgen(G: nx.Graph):
     """
